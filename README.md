@@ -1,5 +1,9 @@
 # dsh-notify-sounds
 
+[![npm version](https://img.shields.io/npm/v/dsh-notify-sounds.svg)](https://www.npmjs.com/package/dsh-notify-sounds)
+[![License](https://img.shields.io/npm/l/dsh-notify-sounds.svg)](LICENSE)
+[![CI](https://github.com/Half-xingle/dsh-notify-sounds/actions/workflows/ci.yml/badge.svg)](https://github.com/Half-xingle/dsh-notify-sounds/actions)
+
 DeepSeek Harness Web GUI 提示音插件：当智能体**需要你选择**（提问 / 计划审阅 / 权限审批）或**任务完成**（会话从运行变为空闲）时，播放一段短提示音。适合你把 DSH 页面切到后台、在别的网页干活时的场景。
 
 - 浏览器半部（`lib/client.js`）：Web Audio 合成短音，订阅会话列表的 `pendingInteraction` 与 `running` 边沿，零外部依赖；设置存浏览器 localStorage（跨标签页自动同步）。
@@ -112,14 +116,32 @@ node tools\verify-install.mjs  # 安装后校验：模拟 client-modules 扫描 
 
 CI（GitHub Actions）会自动跑两个测试。
 
-## 发布到 npm（可选）
+## 发布到 npm
+
+包已声明 `dsh.client` 与 `exports["./client"]`，`files` 只打包 `lib`；`npm publish` 前会自动跑冒烟测试（`prepublishOnly`）。
+
+### 版本迭代流程
 
 ```powershell
-npm login
-npm publish
+# 1. 改代码 -> 本地测试
+node test\smoke.mjs
+
+# 2. 升版本号（自动改 package.json + 打 git tag）
+npm version patch   # 修 bug：1.0.0 -> 1.0.1
+npm version minor   # 加功能：1.0.0 -> 1.1.0
+npm version major   # 不兼容变更：1.0.0 -> 2.0.0
+
+# 3. 发布（2FA 验证码：验证器 App 的 6 位码，或恢复码整串）
+npm publish --otp=123456
+
+# 4. 推送代码和 tag
+git push
+git push --tags
 ```
 
-包已声明 `dsh.client` 与 `exports["./client"]`，`files` 只打包 `lib`；发布后用户可用 `dsh plugin --profile web add dsh-notify-sounds` 安装（见安装方式三）。
+> 没有验证器 App 时可用 npm 的恢复码（每个一次）；也可以在 npmjs.com → Access Tokens 创建勾选了 "bypass 2FA" 的 Granular Access Token 后，用 `$env:NPM_TOKEN` 免验证码发布。
+
+发布后用户即可用 `dsh plugin --profile web add dsh-notify-sounds` 安装（见安装方式三）。
 
 ## License
 
