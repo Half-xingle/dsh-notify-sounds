@@ -33,6 +33,11 @@
     "web"
   ],
   "license": "MIT",
+  "author": {
+    "name": "星乐",
+    "email": "1148958503@qq.com",
+    "url": "https://github.com/Half-xingle"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Half-xingle/dsh-notify-sounds.git"
@@ -48,6 +53,7 @@
     "lib"
   ],
   "scripts": {
-    "test": "node test/smoke.mjs"
+    "test": "node test/smoke.mjs",
+    "prepublishOnly": "node test/smoke.mjs"
   }
 }
