@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # smoke.mjs is self-contained (stubs the browser environment).
+      # host-smoke.mjs imports the host half against the real @deepseek-ai
+      # packages, so install the declared dependencies first.
+      - run: npm install --no-audit --no-fund
+      - run: node test/smoke.mjs
+      - run: node test/host-smoke.mjs
