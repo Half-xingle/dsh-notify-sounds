@@ -34,6 +34,26 @@ const fakeLocalStorage = {
 	clear: () => { storageData.clear(); }
 };
 
+// ---- fake Notification API ----
+const notificationInstances = [];
+class FakeNotification {
+	static permission = "default";
+	static requestPermission() {
+		FakeNotification.permission = "granted";
+		return Promise.resolve("granted");
+	}
+	constructor(title, options) {
+		this.title = title;
+		this.options = options;
+		notificationInstances.push(this);
+	}
+	close() {}
+}
+globalThis.Notification = FakeNotification;
+// keep permission granted during the sound sections so edges never queue
+// async auto-request chains; the notification section toggles it explicitly
+FakeNotification.permission = "granted";
+
 // ---- fake AudioContext recording scheduled oscillators ----
 const scheduled = [];
 class FakeAudioContext {
@@ -105,18 +125,32 @@ assert(typeof mod.apply === "function", "exports.apply is a function");
 assert(Array.isArray(mod.inject), "exports.inject is an array");
 assert(mod.inject.includes("sessions"), "inject lists sessions");
 
-// ---- fake sessions list observable ----
+// ---- fake sessions list observable + fake open session (conversation) ----
 const sessionsListeners = new Set();
 let sessionSnap = { ids: [], byId: {}, current: void 0, phase: "ready", subagentsByParent: {}, jobsBySession: {}, currentAddress: void 0 };
+const conversationListeners = new Set();
+let conversationSnap = { sessionId: "s1", nodes: [], running: false, turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [], pending: [], queue: [] };
+const fakeSession = {
+	subscribe: (listener) => { conversationListeners.add(listener); return () => conversationListeners.delete(listener); },
+	getSnapshot: () => conversationSnap
+};
 const sessionsService = {
 	list: {
 		getSnapshot: () => sessionSnap,
 		subscribe: (listener) => { sessionsListeners.add(listener); return () => sessionsListeners.delete(listener); }
-	}
+	},
+	binding: (id) => (id === sessionSnap.current ? { session: fakeSession } : void 0)
 };
-function setSessions(byId, ids = Object.keys(byId)) {
-	sessionSnap = { ...sessionSnap, ids, byId };
+function setSessions(byId, ids = Object.keys(byId), current = sessionSnap.current) {
+	sessionSnap = { ...sessionSnap, ids, byId, current };
 	for (const l of [...sessionsListeners]) l();
+}
+function setConversation(nodes, running = true) {
+	conversationSnap = { ...conversationSnap, nodes, running };
+	for (const l of [...conversationListeners]) l();
+}
+function assistantNode(turn, step) {
+	return { kind: "assistant-message", turn, step };
 }
 
 // ---- fake ctx ----
@@ -279,6 +313,104 @@ assert(store.getSnapshot().volume === 0.9, "unrelated storage events are ignored
 
 // ---- audio unlock listeners installed ----
 assert(windowListeners.has("pointerdown") && windowListeners.has("keydown"), "audio unlock listeners installed");
+
+// ================= desktop notifications =================
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const notifs = () => notificationInstances.length;
+const lastNotif = () => notificationInstances[notificationInstances.length - 1];
+
+// default permission: an event auto-requests permission, then notifies
+FakeNotification.permission = "default";
+notificationInstances.length = 0;
+setSessions({ s1: { id: "s1", running: true } });
+setSessions({ s1: { id: "s1", running: true, pendingInteraction: "question" } });
+await tick();
+assert(notifs() === 1, "default permission auto-requests and notifies on question edge");
+assert(lastNotif().options.tag === "dsh-notify-question-s1", "question notification tag is session-scoped");
+assert(lastNotif().title.includes("DSH"), "question notification title mentions DSH");
+FakeNotification.permission = "granted";
+setSessions({ s1: { id: "s1", running: true } });
+
+// completion notifies
+notificationInstances.length = 0;
+setSessions({ s1: { id: "s1", running: true } });
+setSessions({ s1: { id: "s1", running: false } });
+assert(notifs() === 1 && lastNotif().options.tag === "dsh-notify-complete-s1", "complete edge notifies");
+
+// per-kind toggle suppresses notifications but keeps sounds
+store.set("notifQuestion", false);
+notificationInstances.length = 0;
+setSessions({ s1: { id: "s1", running: true, pendingInteraction: "question" } });
+assert(notifs() === 0, "notifQuestion off suppresses question notification");
+store.set("notifQuestion", true);
+setSessions({ s1: { id: "s1", running: true } });
+
+// master notifications toggle
+store.set("notifications", false);
+notificationInstances.length = 0;
+setSessions({ s1: { id: "s1", running: true } });
+setSessions({ s1: { id: "s1", running: false } });
+assert(notifs() === 0, "notifications master off suppresses all notifications");
+store.set("notifications", true);
+
+// denied permission silences notifications
+FakeNotification.permission = "denied";
+notificationInstances.length = 0;
+setSessions({ s1: { id: "s1", running: true, pendingInteraction: "approval" } });
+assert(notifs() === 0, "denied permission suppresses notifications");
+FakeNotification.permission = "granted";
+setSessions({ s1: { id: "s1", running: true } });
+
+// ---- step progress ----
+setSessions({ s1: { id: "s1", running: true } }, ["s1"], "s1"); // make s1 the selected/open session
+notificationInstances.length = 0;
+// baseline: step 2 while running (below threshold 3) -> no toast
+setConversation([assistantNode(1, 2)], true);
+assert(notifs() === 0, "step baseline records without toasting");
+// advance to step 4 -> toast "第 4 步完成" (threshold 3)
+setConversation([assistantNode(1, 4)], true);
+assert(notifs() === 1, "step 4 advance toasts");
+assert(lastNotif().options.tag === "dsh-notify-steps-s1", "step toasts share the session tag (replace each other)");
+assert(lastNotif().options.body === "第 4 步完成", "step toast body reports the step number");
+// same step again -> no toast
+setConversation([assistantNode(1, 4), assistantNode(1, 4)], true);
+assert(notifs() === 1, "no toast when the step does not advance");
+// advance to step 5 -> toast
+setConversation([assistantNode(1, 5)], true);
+assert(notifs() === 2 && lastNotif().options.body === "第 5 步完成", "step 5 advance toasts");
+// new turn, step 1 (below threshold) -> no toast
+setConversation([assistantNode(2, 1)], true);
+assert(notifs() === 2, "new turn below threshold does not toast");
+
+// threshold setting respected
+store.set("stepThreshold", 10);
+setConversation([assistantNode(2, 5)], true);
+assert(notifs() === 2, "step below configured threshold does not toast");
+store.set("stepThreshold", 3);
+setConversation([assistantNode(2, 6)], true);
+assert(notifs() === 3, "step above configured threshold toasts");
+
+// idle session: no step toasts
+setConversation([assistantNode(3, 9)], false);
+assert(notifs() === 3, "idle session does not toast progress");
+
+// notifSteps off suppresses step toasts
+store.set("notifSteps", false);
+setConversation([assistantNode(3, 4)], true);
+assert(notifs() === 3, "notifSteps off suppresses step toasts");
+store.set("notifSteps", true);
+
+// reconnect: fresh baseline does not toast pre-existing progress
+const resetHandler = eventHandlers.get("connection/reset");
+resetHandler();
+setConversation([assistantNode(4, 9)], true); // first observation records only
+assert(notifs() === 3, "reconnect baseline does not toast");
+setConversation([assistantNode(4, 10)], true);
+assert(notifs() === 4, "genuine advance after reconnect toasts");
+
+// card exposes permission helpers
+assert(typeof injected.requestPermission === "function" && typeof injected.permission === "function", "card has permission actions");
+assert(injected.permission() === "granted", "permission() reports live state");
 
 console.log(failures === 0 ? "\nALL PASSED" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
