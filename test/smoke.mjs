@@ -150,7 +150,8 @@ function setConversation(nodes, running = true) {
 	for (const l of [...conversationListeners]) l();
 }
 function assistantNode(turn, step) {
-	return { kind: "assistant-message", turn, step };
+	// matches the real AssistantMessageNode discriminant from dsh-client-runtime
+	return { kind: "assistant", turn, step };
 }
 
 // ---- fake ctx ----
