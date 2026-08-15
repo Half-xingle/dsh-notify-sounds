@@ -10,7 +10,7 @@
  *
  * Run: node test/host-smoke.mjs  (from the dsh-notify-sounds directory)
  */
-import { apply, SETTINGS_NAMESPACE, SETTINGS_SCHEMA, createPopupNotifier, buildPopupScript, popupSpawnArgs, popupPaths, showPopup } from "../lib/index.js";
+import { apply, SETTINGS_NAMESPACE, SETTINGS_SCHEMA, createPopupNotifier, buildPopupCommand, showPopup } from "../lib/index.js";
 
 let failures = 0;
 function assert(condition, message) {
@@ -138,17 +138,17 @@ notifier.reset();
 notifier.onSessionEvent("s1", { type: "todo/write", data: { todos: [{ content: "A", status: "completed" }] } });
 assert(shown.length === 6, "after reset, first list is a fresh baseline (no pop)");
 
-// ---- popup script + fixed-signature spawn ----
-const script = buildPopupScript();
+// ---- popup command builder (embedded payload, verified rendering) ----
+const command = buildPopupCommand({ title: "DSH · 测试", body: "中文「引号'」与换行\n测试" });
+assert(Array.isArray(command) && command.includes("-EncodedCommand"), "command uses -EncodedCommand");
+const encoded = command[command.indexOf("-EncodedCommand") + 1];
+const script = Buffer.from(encoded, "base64").toString("utf16le");
 assert(script.includes("Add-Type -AssemblyName System.Windows.Forms"), "script loads WinForms");
 assert(script.includes("TopMost"), "popup is always on top");
 assert(!script.includes("Add-Type -TypeDefinition"), "no csc-based DPI prelude (breaks hidden spawns)");
 assert(script.includes("AppliedDPI"), "registry-based scale compensation present");
-assert(script.includes("ConvertFrom-Json"), "payload is read from the JSON file, not embedded");
-const args = popupSpawnArgs();
-assert(args.includes("-File") && args.includes(popupPaths().script), "spawn uses -File with the fixed script path");
-assert(!args.includes("-EncodedCommand"), "no EncodedCommand (its content would vary the command line per popup)");
-assert(JSON.stringify(args) === JSON.stringify(popupSpawnArgs()), "spawn arguments are constant (anti-virus remember rules match once)");
+assert(script.includes("DSH · 测试") && script.includes("中文「引号''」"), "payload embedded verbatim (single quotes doubled, Chinese intact)");
+assert(!script.includes("\n测试"), "newlines are flattened");
 assert(typeof showPopup === "function", "showPopup exported");
 
 console.log(failures === 0 ? "\nALL PASSED" : `\n${failures} FAILURE(S)`);
