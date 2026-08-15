@@ -50,7 +50,8 @@
     "react": "^18.2.0"
   },
   "files": [
-    "lib"
+    "lib/index.js",
+    "lib/client.js"
   ],
   "scripts": {
     "test": "node test/smoke.mjs",
