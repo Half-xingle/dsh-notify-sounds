@@ -10,7 +10,7 @@
  *
  * Run: node test/host-smoke.mjs  (from the dsh-notify-sounds directory)
  */
-import { apply, SETTINGS_NAMESPACE, SETTINGS_SCHEMA, createPopupNotifier, buildPopupCommand, showPopup } from "../lib/index.js";
+import { apply, SETTINGS_NAMESPACE, SETTINGS_SCHEMA, createPopupNotifier, buildPopupCommand, showPopup, isRootSession } from "../lib/index.js";
 
 let failures = 0;
 function assert(condition, message) {
@@ -50,12 +50,38 @@ const fakeCtx = {
 	// the real effect defers disposal; register-only so the wiring asserts pass
 	effect: () => () => {}
 };
-apply(fakeCtx, { popups: false }); // no real helper spawn in tests
+apply(fakeCtx); // listeners wired; integration asserts below only feed subagent events (no real spawn)
 assert(registrations.length === 1, "exactly one settings section registered");
 assert(registrations[0].ns === "notify-sounds", "settings namespace is notify-sounds");
 assert(registrations[0].options.base.notifications === true && registrations[0].options.base.notifStyle === "native", "composition defaults include notification fields");
 assert(typeof listeners.get("session/event") === "function", "session/event listener wired (shared events pool via ctx.on)");
 assert(typeof listeners.get("agent/status") === "function", "agent/status listener wired");
+
+// ---- top-level-only gating ----
+assert(isRootSession({ header: {} }) === true, "header without delegationDepth is a root session");
+assert(isRootSession({ header: { delegationDepth: 0 } }) === true, "delegationDepth 0 is a root session");
+assert(isRootSession({ header: { delegationDepth: 1 } }) === false, "delegationDepth 1 is a subagent session");
+assert(isRootSession(undefined) === true, "missing session is treated as root (defensive)");
+// feeding a SUBAGENT session event into the real wired listener must not
+// reach the notifier (and thus must not spawn any PowerShell process)
+listeners.get("session/event")({ id: "child-1", header: { delegationDepth: 1 } }, { type: "tool/call", data: { name: "ask_user_question" } });
+listeners.get("session/event")({ id: "child-1", header: { delegationDepth: 1 } }, { type: "todo/write", data: { todos: [{ content: "x", status: "completed" }] } });
+listeners.get("agent/status")({ agent: { id: "child-agent", session: { id: "child-1", header: { delegationDepth: 1 } } }, status: "idle" });
+assert(true, "subagent session/event and agent/status are ignored (no popup spawned)");
+
+// ---- config.popups=false registers settings but no listeners ----
+const disabledRegistrations = [];
+const disabledListeners = new Map();
+const disabledCtx = {
+	inject(keys, fn) {
+		const sctx = { settings: { register: (ns, schema, options) => { disabledRegistrations.push({ ns, schema, options }); return { get: () => ({ ...options.base }), watch: () => () => {} }; } }, effect: (fn) => { const out = fn(); return out ?? (() => {}); } };
+		return { dispose: fn(sctx) ?? (() => {}) };
+	},
+	on: (name, fn) => { disabledListeners.set(name, fn); return () => disabledListeners.delete(name); },
+	effect: () => () => {}
+};
+apply(disabledCtx, { popups: false });
+assert(disabledRegistrations.length === 1 && disabledListeners.size === 0, "popups:false keeps the settings section but wires no popup listeners");
 
 // ---- schema ----
 const good = SETTINGS_SCHEMA({ notifications: false, notifTodo: true, notifStyle: "both" });

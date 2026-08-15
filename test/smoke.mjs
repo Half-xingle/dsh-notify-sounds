@@ -437,6 +437,16 @@ store.set("notifTodo", true);
 // session without a todos projection is ignored (no crash, no toast)
 setSessions({ s1: { id: "s1", running: true } });
 assert(notifs() === 3, "session without todos projection is ignored");
+// subagent todo completion is silent (no baseline, no toast)
+setSessions({
+	s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos: [{ content: "A", status: "pending" }] } },
+	child: { id: "child", running: true, parentSessionId: "s1", displayTitle: "c", projectionValues: { todos: [{ content: "X", status: "pending" }] } }
+});
+setSessions({
+	s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos: [{ content: "A", status: "pending" }] } },
+	child: { id: "child", running: true, parentSessionId: "s1", displayTitle: "c", projectionValues: { todos: [{ content: "X", status: "completed" }] } }
+});
+assert(notifs() === 3, "subagent todo completion does not toast");
 
 // ---- burst aggregation (throttle) ----
 store.set("notifTodoInterval", 1); // 1s window
@@ -474,6 +484,29 @@ setSessions(withTodos([
 ]));
 assert(notifs() === 3, "completion outside the window toasts immediately");
 store.set("notifTodoInterval", 12); // restore default
+
+// ---- subagent sessions are silent (last: shifts the plays() baseline) ----
+setSessions({
+	parent: { id: "parent", running: true },
+	child: { id: "child", running: true, parentSessionId: "parent" }
+});
+const beepsBeforeSub = plays();
+setSessions({
+	parent: { id: "parent", running: true },
+	child: { id: "child", running: true, pendingInteraction: "question", parentSessionId: "parent" }
+});
+assert(plays() === beepsBeforeSub, "subagent question edge does not beep");
+setSessions({
+	parent: { id: "parent", running: true },
+	child: { id: "child", running: false, parentSessionId: "parent" }
+});
+assert(plays() === beepsBeforeSub, "subagent running->idle does not beep");
+// top-level session with subagents present still notifies normally
+setSessions({
+	parent: { id: "parent", running: true, pendingInteraction: "question" },
+	child: { id: "child", running: false, parentSessionId: "parent" }
+});
+assert(plays() === beepsBeforeSub + 2, "top-level question still beeps while subagents are present");
 
 // card exposes permission helpers
 assert(typeof injected.requestPermission === "function" && typeof injected.permission === "function", "card has permission actions");
