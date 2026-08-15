@@ -9,3 +9,4 @@ node_modules/
 .idea/
 .DS_Store
 Thumbs.db
+lib/.dsh-events.log
