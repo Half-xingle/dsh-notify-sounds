@@ -54,7 +54,7 @@ apply(fakeCtx, { popups: false }); // no real helper spawn in tests
 assert(registrations.length === 1, "exactly one settings section registered");
 assert(registrations[0].ns === "notify-sounds", "settings namespace is notify-sounds");
 assert(registrations[0].options.base.notifications === true && registrations[0].options.base.notifStyle === "native", "composition defaults include notification fields");
-assert(typeof listeners.get("root:session/event") === "function", "session/event listener wired on the root context");
+assert(typeof listeners.get("session/event") === "function", "session/event listener wired (shared events pool via ctx.on)");
 assert(typeof listeners.get("agent/status") === "function", "agent/status listener wired");
 
 // ---- schema ----
