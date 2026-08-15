@@ -322,7 +322,15 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const notifs = () => notificationInstances.length;
 const lastNotif = () => notificationInstances[notificationInstances.length - 1];
 
-// default permission: an event auto-requests permission, then notifies
+// native popup mode (default) suppresses system notifications entirely
+FakeNotification.permission = "granted";
+notificationInstances.length = 0;
+setSessions({ s1: { id: "s1", running: true, pendingInteraction: "question" } });
+assert(notifs() === 0, "native popup mode suppresses system notifications (host shows popups)");
+setSessions({ s1: { id: "s1", running: true } });
+
+// system mode: the existing behavior
+store.set("notifStyle", "system");
 FakeNotification.permission = "default";
 notificationInstances.length = 0;
 setSessions({ s1: { id: "s1", running: true } });
