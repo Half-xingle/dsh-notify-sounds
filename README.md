@@ -140,8 +140,6 @@ node test\host-smoke.mjs   # 宿主半部：settings 命名空间注册与 schem
 node tools\verify-install.mjs  # 安装后校验：模拟 client-modules 扫描 + 完整导入链路
 ```
 
-> 新插件开发前先读 **[DEVELOPMENT.md](DEVELOPMENT.md)**：架构要点、踩坑记录（`ctx.effect` 陷阱、DPI 弹窗坐标、npm 凭证问题等）、发布流程与账号凭证备忘。
-
 CI（GitHub Actions）会自动跑两个测试。
 
 ## 发布到 npm
