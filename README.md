@@ -7,7 +7,7 @@
 DeepSeek Harness Web GUI 提示音插件：当智能体**需要你选择**（提问 / 计划审阅 / 权限审批）或**任务完成**（会话从运行变为空闲）时，播放一段短提示音。适合你把 DSH 页面切到后台、在别的网页干活时的场景。
 
 - 浏览器半部（`lib/client.js`）：Web Audio 合成短音，订阅会话列表的 `pendingInteraction` 与 `running` 边沿，零外部依赖；设置存浏览器 localStorage（跨标签页自动同步）。
-- 宿主半部（`lib/index.js`）：注册 `notify-sounds` 设置命名空间与 schema（官方模式；当前 API 网关只对白名单命名空间开放浏览器读写，见「与官方标准的对照」）。
+- 宿主半部（`lib/index.js`）：注册 `notify-sounds` 设置命名空间与 schema（官方模式；当前 API 网关只对白名单命名空间开放浏览器读写，见「与官方标准的对照」），并驱动**原生桌面弹窗**（v1.1）：右下角无边框圆角 toast，6 秒自动消失，不依赖浏览器通知中心——**浏览器标签页关闭也能弹**。
 - 设置项显示在 **设置 → 插件配置 → 提示音通知** 卡片中（开关、音量、试听、恢复默认）。
 
 ## 声音
@@ -83,6 +83,21 @@ dsh plugin --profile web add dsh-notify-sounds
 > 任务进度按**计划项**（todo 列表）粒度提示，而不是按模型推理轮次——每个计划项完成弹一次，同一会话的进度通知互相替换，不会刷屏。轮次边界自动重置基线：跨轮次重新写入的已完成项不会重复提示。
 > 注意：Windows 会把同一应用短时间内连续的通知归档（只显示第一条横幅），因此默认做了突发合并（最小间隔 12 秒）；长任务中各项间隔较大时仍会逐条弹出。
 
+## 原生弹窗（宿主半部，Windows）
+
+v1.1 起，宿主半部会在屏幕**右下角**弹出原生 toast（无边框、深色圆角、置顶，约 6 秒自动消失；点击或 Esc 立即关闭）。与浏览器系统通知相互独立，**不占用系统通知中心**（无归档、无 Focus Assist 抑制），浏览器标签页关闭、页面切后台都能弹。
+
+| 场景 | 触发时机 | 弹窗内容 |
+| --- | --- | --- |
+| 提问 | `tool/call` 且工具名为 `ask_user_question`（含计划审阅） | 「DSH · 需要你 智能体正在等待你的选择」 |
+| 审批 | `approval/asked` 审计事件 | 「DSH · 等待审批 「工具名」需要你的审批」 |
+| 进度 | `todo/write` 中某计划项变为已完成 | 「DSH · 任务进度 「计划项」已完成（n/m）」 |
+| 完成 | `agent/status` → idle | 「DSH 任务完成」 |
+
+**门控配置**：原生弹窗由宿主读取 `$DSH_HOME/settings.yaml` 中 `notify-sounds:` 段的 `notifications` / `notifQuestion` / `notifComplete` / `notifTodo`（默认全开），与浏览器 localStorage 设置相互独立；改完保存即生效（热重载）。也可在 `cordis.patch.yml` 的插件行写 `config: { popups: false }` 整体禁用。
+
+**实现说明**：每个弹窗是一个一次性隐藏 PowerShell 进程（WinForms `ShowDialog`；常驻 helper 方案在本环境无法渲染，已弃用）。用 `-EncodedCommand` 内嵌脚本（文件/JSON 变体不渲染），经注册表 `AppliedDPI` 做缩放补偿（125% 等缩放屏右下角定位正确，缩放坐标混用曾导致弹窗画到屏幕外，已修复）。首次弹窗可能触发安全软件对「隐藏 PowerShell」的提示，允许并勾选「不再询问」后按命令行签名记忆，不再打扰。
+
 ## 工作原理
 
 浏览器半部订阅 `ctx.sessions.list` 可观察对象（dsh-client-runtime 提供的会话列表镜像），按会话记录上一次的 `{ running, pendingInteraction }`：
@@ -91,12 +106,15 @@ dsh plugin --profile web add dsh-notify-sounds
 - `running` 从 true 变 false → 播放完成音；
 - 只对**边沿**发声：页面加载、重连后的首次快照只记录状态不发声；新出现的会话不发声。
 
+宿主半部监听全局 `session/event` 与 `agent/status`（`global: true` 绕过作用域 carrier 过滤），按上表驱动原生弹窗；todo 进度对每次 `todo/write` 的全量列表做 diff（`turn/start` 重置基线）。
+
 ## 限制
 
 - 浏览器自动播放策略：首次发声前需要页面上有过一次用户手势（点击/按键）。
-- 标签页被**关闭**时听不到（浏览器侧插件的固有限制）。
+- 标签页被**关闭**时听不到声音（浏览器侧插件的固有限制）；原生弹窗不受影响，照常弹出。
 - 多标签页各自发声（每页一个运行时实例），设置经 `storage` 事件同步。
-- 手动停止任务也会触发「完成」音（running → idle 无法区分完成与停止）；如不需要可关闭「任务完成提示」。
+- 手动停止任务也会触发「完成」音/弹窗（running → idle 无法区分完成与停止）；如不需要可关闭「任务完成提示」。
+- 原生弹窗仅 Windows（依赖 PowerShell + WinForms），且可能触发安全软件对隐藏 PowerShell 的首次提示（见上）。
 
 ## 与官方标准的对照
 
