@@ -366,6 +366,7 @@ setSessions({ s1: { id: "s1", running: true } });
 
 // ---- todo progress (plan items) ----
 const withTodos = (todos) => ({ s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos } } });
+store.set("notifTodoInterval", 0); // disable aggregation for deterministic tests
 notificationInstances.length = 0;
 // baseline: plan written, nothing completed
 setSessions(withTodos([
@@ -428,6 +429,43 @@ store.set("notifTodo", true);
 // session without a todos projection is ignored (no crash, no toast)
 setSessions({ s1: { id: "s1", running: true } });
 assert(notifs() === 3, "session without todos projection is ignored");
+
+// ---- burst aggregation (throttle) ----
+store.set("notifTodoInterval", 1); // 1s window
+notificationInstances.length = 0;
+// first completion toasts immediately
+setSessions(withTodos([
+	{ content: "A", status: "pending" },
+	{ content: "B", status: "in_progress" }
+]));
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "in_progress" }
+]));
+assert(notifs() === 1 && lastNotif().options.body.includes("A"), "first burst completion toasts immediately");
+// second completion inside the 1s window folds (no immediate toast)
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" }
+]));
+assert(notifs() === 1, "burst completion inside the window folds instead of toasting");
+// the folded toast fires after the window (session still running)
+await new Promise((resolve) => setTimeout(resolve, 1150));
+assert(notifs() === 2, "folded burst toast fires after the window");
+assert(lastNotif().options.body.includes("B") && lastNotif().options.body.includes("2/2"), "folded toast carries the latest item + count");
+// completion outside the window toasts immediately again
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" },
+	{ content: "C", status: "pending" }
+]));
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" },
+	{ content: "C", status: "completed" }
+]));
+assert(notifs() === 3, "completion outside the window toasts immediately");
+store.set("notifTodoInterval", 12); // restore default
 
 // card exposes permission helpers
 assert(typeof injected.requestPermission === "function" && typeof injected.permission === "function", "card has permission actions");
