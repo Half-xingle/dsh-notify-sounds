@@ -364,52 +364,70 @@ assert(notifs() === 0, "denied permission suppresses notifications");
 FakeNotification.permission = "granted";
 setSessions({ s1: { id: "s1", running: true } });
 
-// ---- step progress ----
-setSessions({ s1: { id: "s1", running: true } }, ["s1"], "s1"); // make s1 the selected/open session
+// ---- todo progress (plan items) ----
+const withTodos = (todos) => ({ s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos } } });
 notificationInstances.length = 0;
-// baseline: step 2 while running (below threshold 3) -> no toast
-setConversation([assistantNode(1, 2)], true);
-assert(notifs() === 0, "step baseline records without toasting");
-// advance to step 4 -> toast "第 4 步完成" (threshold 3)
-setConversation([assistantNode(1, 4)], true);
-assert(notifs() === 1, "step 4 advance toasts");
-assert(lastNotif().options.tag === "dsh-notify-steps-s1", "step toasts share the session tag (replace each other)");
-assert(lastNotif().options.body === "第 4 步完成", "step toast body reports the step number");
-// same step again -> no toast
-setConversation([assistantNode(1, 4), assistantNode(1, 4)], true);
-assert(notifs() === 1, "no toast when the step does not advance");
-// advance to step 5 -> toast
-setConversation([assistantNode(1, 5)], true);
-assert(notifs() === 2 && lastNotif().options.body === "第 5 步完成", "step 5 advance toasts");
-// new turn, step 1 (below threshold) -> no toast
-setConversation([assistantNode(2, 1)], true);
-assert(notifs() === 2, "new turn below threshold does not toast");
-
-// threshold setting respected
-store.set("stepThreshold", 10);
-setConversation([assistantNode(2, 5)], true);
-assert(notifs() === 2, "step below configured threshold does not toast");
-store.set("stepThreshold", 3);
-setConversation([assistantNode(2, 6)], true);
-assert(notifs() === 3, "step above configured threshold toasts");
-
-// idle session: no step toasts
-setConversation([assistantNode(3, 9)], false);
-assert(notifs() === 3, "idle session does not toast progress");
-
-// notifSteps off suppresses step toasts
-store.set("notifSteps", false);
-setConversation([assistantNode(3, 4)], true);
-assert(notifs() === 3, "notifSteps off suppresses step toasts");
-store.set("notifSteps", true);
-
-// reconnect: fresh baseline does not toast pre-existing progress
-const resetHandler = eventHandlers.get("connection/reset");
-resetHandler();
-setConversation([assistantNode(4, 9)], true); // first observation records only
-assert(notifs() === 3, "reconnect baseline does not toast");
-setConversation([assistantNode(4, 10)], true);
-assert(notifs() === 4, "genuine advance after reconnect toasts");
+// baseline: plan written, nothing completed
+setSessions(withTodos([
+	{ content: "A", status: "pending" },
+	{ content: "B", status: "in_progress" }
+]));
+assert(notifs() === 0, "todo baseline records without toasting");
+// A completes -> toast with progress count
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "in_progress" }
+]));
+assert(notifs() === 1, "todo completion toasts");
+assert(lastNotif().options.tag === "dsh-notify-todo-s1", "todo toasts share the session tag");
+assert(lastNotif().options.body.includes("A") && lastNotif().options.body.includes("1/2"), "todo toast reports item + progress");
+// B completes -> toast 2/2
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" }
+]));
+assert(notifs() === 2 && lastNotif().options.body.includes("2/2"), "second todo completion toasts with progress");
+// same list again -> no toast
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" }
+]));
+assert(notifs() === 2, "unchanged todo list does not toast");
+// turn boundary: projection resets to null -> baseline reset; the re-written
+// plan with pre-completed items must NOT re-toast
+setSessions({ s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos: null } } });
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" },
+	{ content: "C", status: "in_progress" }
+]));
+assert(notifs() === 2, "re-written plan after turn boundary does not re-toast completed items");
+// C completes in the new turn -> toast
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" },
+	{ content: "C", status: "completed" }
+]));
+assert(notifs() === 3 && lastNotif().options.body.includes("C"), "new-turn completion toasts");
+// notifTodo off suppresses todo toasts
+store.set("notifTodo", false);
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" },
+	{ content: "C", status: "completed" },
+	{ content: "D", status: "in_progress" }
+]));
+setSessions(withTodos([
+	{ content: "A", status: "completed" },
+	{ content: "B", status: "completed" },
+	{ content: "C", status: "completed" },
+	{ content: "D", status: "completed" }
+]));
+assert(notifs() === 3, "notifTodo off suppresses todo toasts");
+store.set("notifTodo", true);
+// session without a todos projection is ignored (no crash, no toast)
+setSessions({ s1: { id: "s1", running: true } });
+assert(notifs() === 3, "session without todos projection is ignored");
 
 // card exposes permission helpers
 assert(typeof injected.requestPermission === "function" && typeof injected.permission === "function", "card has permission actions");
