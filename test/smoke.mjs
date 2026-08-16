@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Smoke test for dsh-notify-sounds browser half (lib/client.js).
  *
  * Simulates the client-modules environment: a fake `window` with
@@ -290,7 +290,7 @@ store.set("volume", 0.5);
 // ---- preview ignores gating but records a tone ----
 const before = plays();
 injected.preview();
-assert(plays() === before + 3, "preview plays the complete sequence (3-note) — got " + (plays() - before));
+assert(plays() === before + 3, "preview plays the complete sequence (3-note) 鈥?got " + (plays() - before));
 
 // ---- persistence: a fresh store sees the stored values ----
 store.set("volume", 0.8);
@@ -440,11 +440,11 @@ assert(notifs() === 3, "session without todos projection is ignored");
 // subagent todo completion is silent (no baseline, no toast)
 setSessions({
 	s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos: [{ content: "A", status: "pending" }] } },
-	child: { id: "child", running: true, parentSessionId: "s1", displayTitle: "c", projectionValues: { todos: [{ content: "X", status: "pending" }] } }
+	child: { id: "child", running: true, parentId: "s1", displayTitle: "c", projectionValues: { todos: [{ content: "X", status: "pending" }] } }
 });
 setSessions({
 	s1: { id: "s1", running: true, displayTitle: "t", projectionValues: { todos: [{ content: "A", status: "pending" }] } },
-	child: { id: "child", running: true, parentSessionId: "s1", displayTitle: "c", projectionValues: { todos: [{ content: "X", status: "completed" }] } }
+	child: { id: "child", running: true, parentId: "s1", displayTitle: "c", projectionValues: { todos: [{ content: "X", status: "completed" }] } }
 });
 assert(notifs() === 3, "subagent todo completion does not toast");
 
@@ -488,23 +488,23 @@ store.set("notifTodoInterval", 12); // restore default
 // ---- subagent sessions are silent (last: shifts the plays() baseline) ----
 setSessions({
 	parent: { id: "parent", running: true },
-	child: { id: "child", running: true, parentSessionId: "parent" }
+	child: { id: "child", running: true, parentId: "parent" }
 });
 const beepsBeforeSub = plays();
 setSessions({
 	parent: { id: "parent", running: true },
-	child: { id: "child", running: true, pendingInteraction: "question", parentSessionId: "parent" }
+	child: { id: "child", running: true, pendingInteraction: "question", parentId: "parent" }
 });
 assert(plays() === beepsBeforeSub, "subagent question edge does not beep");
 setSessions({
 	parent: { id: "parent", running: true },
-	child: { id: "child", running: false, parentSessionId: "parent" }
+	child: { id: "child", running: false, parentId: "parent" }
 });
 assert(plays() === beepsBeforeSub, "subagent running->idle does not beep");
 // top-level session with subagents present still notifies normally
 setSessions({
 	parent: { id: "parent", running: true, pendingInteraction: "question" },
-	child: { id: "child", running: false, parentSessionId: "parent" }
+	child: { id: "child", running: false, parentId: "parent" }
 });
 assert(plays() === beepsBeforeSub + 2, "top-level question still beeps while subagents are present");
 
