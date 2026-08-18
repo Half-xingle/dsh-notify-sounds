@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Smoke test for dsh-notify-sounds browser half (lib/client.js).
  *
  * Simulates the client-modules environment: a fake `window` with
@@ -182,7 +182,7 @@ const first = gen.next();
 assert(first.done === false, "slot injection yields a registration");
 const registration = registrations[0];
 assert(registration !== void 0, "slots.register captured a registration");
-assert(registration.options.id === "notify-sounds", "card registered with id notify-sounds");
+assert(registration.options.key === "notify-sounds", "card registered with key = settings namespace (keyed slot contract)");
 assert(typeof registration.component === "function", "card component is a function");
 const injected = registration.options.inject();
 const store = injected.hooks.notify;
