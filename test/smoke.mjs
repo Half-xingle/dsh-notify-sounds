@@ -187,11 +187,9 @@ assert(typeof registration.component === "function", "card component is a functi
 const injected = registration.options.inject();
 const store = injected.hooks.notify;
 assert(typeof store.getSnapshot === "function" && typeof store.set === "function", "card hooks.notify is the settings store");
-assert(typeof injected.hooks.diag.getSnapshot === "function" && typeof injected.hooks.diag.subscribe === "function", "card hooks.diag is observable");
 const cardProps = {
 	t: (key) => key,
 	useNotify: (selector) => selector(store.getSnapshot()),
-	useDiag: (selector) => selector(injected.hooks.diag.getSnapshot()),
 	...injected
 };
 const cardEl = registration.component(cardProps);
