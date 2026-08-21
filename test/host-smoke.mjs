@@ -86,6 +86,8 @@ assert(disabledRegistrations.length === 1 && disabledListeners.size === 0, "popu
 // ---- schema ----
 const good = SETTINGS_SCHEMA({ notifications: false, notifTodo: true, notifStyle: "both" });
 assert(good.notifications === false && good.notifStyle === "both", "schema accepts valid values");
+assert(good.notifTodoInterval === 12, "schema defaults notifTodoInterval to 12");
+assert(good.notifications === false && good.notifStyle === "both", "schema accepts valid values");
 let rejected = false;
 try {
 	SETTINGS_SCHEMA({ notifStyle: "weird" });

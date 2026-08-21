@@ -2,9 +2,11 @@
  * Smoke test for dsh-notify-sounds browser half (lib/client.js).
  *
  * Simulates the client-modules environment: a fake `window` with
- * `__ModuleLoader__`, fake `document`, a stub react, fake localStorage, a fake
- * sessions list observable, and a fake AudioContext that records scheduled
- * tones. Drives `apply(ctx)` and asserts notification edges + settings.
+ * `__ModuleLoader__`, fake `document`, a stub react, a fake settings scope
+ * (the official settingsScope contract: layered value/base/user + revision),
+ * a fake sessions list observable, and a fake AudioContext that records
+ * scheduled tones. Drives `apply(ctx)` and asserts notification edges +
+ * settings.
  *
  * Run: node test/smoke.mjs  (from the dsh-notify-sounds directory)
  */
@@ -24,15 +26,6 @@ function assert(condition, message) {
 		console.error(`  FAIL - ${message}`);
 	}
 }
-
-// ---- fake localStorage ----
-const storageData = new Map();
-const fakeLocalStorage = {
-	getItem: (key) => (storageData.has(key) ? storageData.get(key) : null),
-	setItem: (key, value) => { storageData.set(key, String(value)); },
-	removeItem: (key) => { storageData.delete(key); },
-	clear: () => { storageData.clear(); }
-};
 
 // ---- fake Notification API ----
 const notificationInstances = [];
@@ -103,7 +96,59 @@ const fakeWindow = {
 const fakeDocument = { visibilityState: "visible" };
 globalThis.window = fakeWindow;
 globalThis.document = fakeDocument;
-globalThis.localStorage = fakeLocalStorage;
+
+// ---- fake settings scope (official settingsScope layered contract) ----
+const scopeListeners = new Set();
+let scopeState = {
+	status: "ready",
+	value: null, // filled after the bundle materializes (defaults known)
+	base: null,
+	user: {},
+	revision: 0,
+	writable: true,
+	mode: "host"
+};
+const publishScope = () => {
+	for (const listener of [...scopeListeners]) listener();
+};
+const fakeScope = {
+	getSnapshot: () => scopeState,
+	subscribe: (listener) => {
+		scopeListeners.add(listener);
+		return () => {
+			scopeListeners.delete(listener);
+		};
+	},
+	set(field, value) {
+		// replace the snapshot object (the real controller immer-updates the store,
+		// so getSnapshot() returns a NEW reference after every change)
+		scopeState = {
+			...scopeState,
+			user: { ...scopeState.user, [field]: value },
+			value: { ...scopeState.value, [field]: value },
+			revision: scopeState.revision + 1
+		};
+		publishScope();
+		return Promise.resolve();
+	},
+	unset(field) {
+		const { [field]: _removed, ...rest } = scopeState.user;
+		scopeState = {
+			...scopeState,
+			user: rest,
+			value: { ...scopeState.base, ...rest },
+			revision: scopeState.revision + 1
+		};
+		publishScope();
+		return Promise.resolve();
+	}
+};
+const settingsScopeService = {
+	bind: (spec) => {
+		assert(spec.namespace === "notify-sounds", "settings scope binds the notify-sounds namespace");
+		return fakeScope;
+	}
+};
 
 // ---- stub react ----
 const reactStub = {
@@ -124,6 +169,10 @@ const mod = handoff.factory(fakeRequire);
 assert(typeof mod.apply === "function", "exports.apply is a function");
 assert(Array.isArray(mod.inject), "exports.inject is an array");
 assert(mod.inject.includes("sessions"), "inject lists sessions");
+assert(mod.inject.includes("settingsScope"), "inject lists settingsScope");
+// seed the fake scope document with the plugin's defaults (host schema layer)
+scopeState.value = { ...mod.DEFAULT_SETTINGS };
+scopeState.base = { ...mod.DEFAULT_SETTINGS };
 
 // ---- fake sessions list observable + fake open session (conversation) ----
 const sessionsListeners = new Set();
@@ -167,7 +216,8 @@ const ctx = {
 	slots: {
 		inject: (name, fn) => slotInjections.set(name, fn),
 		register: (options, component) => { registrations.push({ options, component }); return () => {}; }
-	}
+	},
+	settingsScope: settingsScopeService
 };
 
 // ---- apply ----
@@ -290,27 +340,24 @@ const before = plays();
 injected.preview();
 assert(plays() === before + 3, "preview plays the complete sequence (3-note) 鈥?got " + (plays() - before));
 
-// ---- persistence: a fresh store sees the stored values ----
+// ---- settings scope: writes land in the document's user layer ----
 store.set("volume", 0.8);
 store.set("question", false);
-const thirdStore = mod.createLocalSettingsStore();
-assert(thirdStore.getSnapshot().volume === 0.8 && thirdStore.getSnapshot().question === false, "fresh store reads persisted localStorage");
+assert(scopeState.user.volume === 0.8 && scopeState.user.question === false, "card writes land in the settings document user layer");
+assert(store.getSnapshot().volume === 0.8 && store.getSnapshot().question === false, "store reflects the scope document after writes");
+// a fresh adapter over the same scope sees the same document
+const fresh = mod.createSettingsScopeStore(fakeScope);
+assert(fresh.getSnapshot().volume === 0.8 && fresh.getSnapshot().question === false, "fresh store reads the scope document");
+fresh.dispose();
 store.set("volume", 0.5);
 store.set("question", true);
 
-// ---- resetAll restores defaults ----
+// ---- resetAll unsets every user-layer field ----
 store.set("onlyWhenHidden", true);
+store.set("volume", 0.9);
 injected.resetAll();
-assert(store.getSnapshot().onlyWhenHidden === false && store.getSnapshot().volume === 0.5, "resetAll restores defaults");
-
-// ---- cross-tab sync via storage event ----
-const storageListener = windowListeners.get("storage")?.fn;
-assert(typeof storageListener === "function", "storage event listener installed");
-fakeLocalStorage.setItem(mod.STORAGE_KEY, JSON.stringify({ ...mod.DEFAULT_SETTINGS, volume: 0.9 }));
-storageListener({ key: mod.STORAGE_KEY });
-assert(store.getSnapshot().volume === 0.9, "storage event adopts the other tab's value");
-storageListener({ key: "unrelated-key" });
-assert(store.getSnapshot().volume === 0.9, "unrelated storage events are ignored");
+assert(store.getSnapshot().onlyWhenHidden === false && store.getSnapshot().volume === 0.5, "resetAll restores defaults (unsets the user layer)");
+assert(Object.keys(scopeState.user).length === 0, "resetAll empties the settings document user layer");
 
 // ---- audio unlock listeners installed ----
 assert(windowListeners.has("pointerdown") && windowListeners.has("keydown"), "audio unlock listeners installed");

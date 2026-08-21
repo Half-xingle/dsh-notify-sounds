@@ -78,7 +78,7 @@ dsh plugin --profile web add dsh-notify-sounds
 | 任务进度通知 | 开 | **计划（todo）列表中的某一项变为已完成时**弹通知，如「「收集需求」已完成（2/5）」 |
 | 进度通知最小间隔 | 12 秒 | 突发合并：同一会话在间隔内连续完成的多项，合并为一条（最新项+计数）；0 = 逐条提示 |
 
-设置存储在浏览器 localStorage（键 `dsh-notify-sounds.settings.v1`），跨标签页自动同步。
+设置经浏览器 `ctx.settingsScope` 读写官方设置文档（`$DSH_HOME/settings.yaml` 的 `notify-sounds:` 段）——**浏览器卡片与宿主弹窗共用同一份设置**，一处修改两端生效；远程（非回环）访问时设置只读，卡片回退本地默认。
 
 > 任务进度按**计划项**（todo 列表）粒度提示，而不是按模型推理轮次——每个计划项完成弹一次，同一会话的进度通知互相替换，不会刷屏。轮次边界自动重置基线：跨轮次重新写入的已完成项不会重复提示。
 > 注意：Windows 会把同一应用短时间内连续的通知归档（只显示第一条横幅），因此默认做了突发合并（最小间隔 12 秒）；长任务中各项间隔较大时仍会逐条弹出。
@@ -94,7 +94,7 @@ v1.1 起，宿主半部会在屏幕**右下角**弹出原生 toast（无边框�
 | 进度 | `todo/write` 中某计划项变为已完成 | 「DSH · 任务进度 「计划项」已完成（n/m）」 |
 | 完成 | `agent/status` → idle | 「DSH 任务完成」 |
 
-**门控配置**：原生弹窗由宿主读取 `$DSH_HOME/settings.yaml` 中 `notify-sounds:` 段的 `notifications` / `notifQuestion` / `notifComplete` / `notifTodo`（默认全开），与浏览器 localStorage 设置相互独立；改完保存即生效（热重载）。也可在 `cordis.patch.yml` 的插件行写 `config: { popups: false }` 整体禁用。
+**门控配置**：弹窗与声音的设置同源——浏览器卡片与 `$DSH_HOME/settings.yaml` 的 `notify-sounds:` 段读写同一文档（`notifications` / `notifQuestion` / `notifComplete` / `notifTodo` 等，默认全开）；保存即生效（热重载）。也可在 `cordis.patch.yml` 的插件行写 `config: { popups: false }` 整体禁用宿主弹窗。
 
 **实现说明**：每个弹窗是一个一次性隐藏 PowerShell 进程（WinForms `ShowDialog`；常驻 helper 方案在本环境无法渲染，已弃用）。用 `-EncodedCommand` 内嵌脚本（文件/JSON 变体不渲染），经注册表 `AppliedDPI` 做缩放补偿（125% 等缩放屏右下角定位正确，缩放坐标混用曾导致弹窗画到屏幕外，已修复）。首次弹窗可能触发安全软件对「隐藏 PowerShell」的提示，允许并勾选「不再询问」后按命令行签名记忆，不再打扰。
 
@@ -112,9 +112,10 @@ v1.1 起，宿主半部会在屏幕**右下角**弹出原生 toast（无边框�
 
 - 浏览器自动播放策略：首次发声前需要页面上有过一次用户手势（点击/按键）。
 - 标签页被**关闭**时听不到声音（浏览器侧插件的固有限制）；原生弹窗不受影响，照常弹出。
-- 多标签页各自发声（每页一个运行时实例），设置经 `storage` 事件同步。
+- 多标签页各自发声（每页一个运行时实例），设置经官方 settings 文档同步（同源同值）。
 - 手动停止任务也会触发「完成」音/弹窗（running → idle 无法区分完成与停止）；如不需要可关闭「任务完成提示」。
 - 原生弹窗仅 Windows（依赖 PowerShell + WinForms），且可能触发安全软件对隐藏 PowerShell 的首次提示（见上）。
+- 远程（非回环）访问 DSH 时设置只读（settings RPC 仅限回环），卡片回退本地默认。
 
 ## 与官方标准的对照
 
@@ -125,11 +126,12 @@ v1.1 起，宿主半部会在屏幕**右下角**弹出原生 toast（无边框�
 | 插件是 npm 包，`package.json` 声明 `dsh.client: { platform: "web", inject?, immediately? }` 且导出 `./client` 子路径 | ✅ |
 | 浏览器 bundle 经 `window.__ModuleLoader__.load({ id: <包名>, factory })` 注册，导出 `apply(ctx)` 与 `inject` 服务键 | ✅ |
 | bundle 纯净化：只能 require 平台 seed 词与经 ctx 注入的服务 | ✅ 只 require react |
-| 设置项：宿主半部 `installSettingsSection` + schemastery schema | ✅（客户端因网关白名单改用 localStorage，见下） |
+| 设置项：宿主半部 `installSettingsSection` + schemastery schema | ✅ |
+| 设置读写：浏览器 `ctx.settingsScope` 绑定命名空间（三层快照 + revision 栅栏） | ✅（dsh ≥ 0.1.1-rc.2 官方模式） |
 | 挂载：`cordis.patch.yml` 用 `insert:` 列表新增行 | ✅ |
 | 安装：官方 `dsh plugin`（pnpm）；junction 接入 = 官方 `healProfilesModuleFallback` 同款机制 | ✅ 等效 |
 
-**关于设置存储**：宿主半部按官方模式注册了 `notify-sounds` 命名空间，但 web API 网关（`dsh-host-apiproxy`）只暴露硬编码白名单（`WEB_SETTINGS_NAMESPACES`/`PRODUCT_SETTINGS_NAMESPACES`）给浏览器客户端，第三方命名空间暂不可远程读写（官方源码注释标注为 deferred work）。因此设置实际存于浏览器 localStorage；上游开放后可无缝切回命名空间。
+**关于设置存储**：浏览器半部经 `ctx.settingsScope`（官方客户端设置服务，dsh ≥ 0.1.1-rc.2）绑定 `notify-sounds` 命名空间读写——卡片写入落进 `$DSH_HOME/settings.yaml` 的用户层，宿主弹窗门控与浏览器声音共用同一份文档，命名空间本身是两半部的连接键（官方 `adding-a-settings-card` cookbook 模式）。
 
 ## 开发
 
