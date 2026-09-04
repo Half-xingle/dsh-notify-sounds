@@ -25,11 +25,15 @@ function assert(condition, message) {
 // ---- settings section registration + listener wiring ----
 const registrations = [];
 const listeners = new Map();
+// dsh ≥ 0.1.2: installSettingsSection was removed; the settings service
+// exposes installSection(owner, ns, schema, entry, hooks) instead.
 const fakeSettings = {
-	register(ns, schema, options) {
-		registrations.push({ ns, schema, options });
+	installSection(owner, ns, schema, entry, hooks) {
+		registrations.push({ ns, schema, entry });
+		hooks.setSource(() => ({ ...entry }));
+		hooks.onChange();
 		return {
-			get: () => ({ ...options.base }),
+			get: () => ({ ...entry }),
 			watch: () => () => {}
 		};
 	}
@@ -53,7 +57,7 @@ const fakeCtx = {
 apply(fakeCtx); // listeners wired; integration asserts below only feed subagent events (no real spawn)
 assert(registrations.length === 1, "exactly one settings section registered");
 assert(registrations[0].ns === "notify-sounds", "settings namespace is notify-sounds");
-assert(registrations[0].options.base.notifications === true && registrations[0].options.base.notifStyle === "native", "composition defaults include notification fields");
+assert(registrations[0].entry.notifications === true && registrations[0].entry.notifStyle === "native", "composition defaults include notification fields");
 assert(typeof listeners.get("session/event") === "function", "session/event listener wired (shared events pool via ctx.on)");
 assert(typeof listeners.get("agent/status") === "function", "agent/status listener wired");
 
@@ -74,7 +78,7 @@ const disabledRegistrations = [];
 const disabledListeners = new Map();
 const disabledCtx = {
 	inject(keys, fn) {
-		const sctx = { settings: { register: (ns, schema, options) => { disabledRegistrations.push({ ns, schema, options }); return { get: () => ({ ...options.base }), watch: () => () => {} }; } }, effect: (fn) => { const out = fn(); return out ?? (() => {}); } };
+		const sctx = { settings: { installSection: (owner, ns, schema, entry, hooks) => { disabledRegistrations.push({ ns, schema, entry }); hooks.setSource(() => ({ ...entry })); hooks.onChange(); return { get: () => ({ ...entry }), watch: () => () => {} }; } }, effect: (fn) => { const out = fn(); return out ?? (() => {}); } };
 		return { dispose: fn(sctx) ?? (() => {}) };
 	},
 	on: (name, fn) => { disabledListeners.set(name, fn); return () => disabledListeners.delete(name); },
