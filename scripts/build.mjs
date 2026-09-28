@@ -55,6 +55,15 @@ async function composeClientBundle() {
 		throw new Error(`src/client/${CLIENT_SOURCE} must be plain script text; found a top-level import/export`);
 	}
 	const body = `// ---- src/client/${CLIENT_SOURCE} ----\n${text.trimEnd()}\n`.replace(/^/gm, "\t\t");
+	// Guard the invariant the factory contract rests on: the id this bundle
+	// registers under must be the package name. The source declares it once
+	// (PACKAGE_NAME) so no second literal can drift, and the build asserts both.
+	if (!text.includes(`const PACKAGE_NAME = ${JSON.stringify(packageName)};`)) {
+		throw new Error(
+			`src/client/${CLIENT_SOURCE} must declare const PACKAGE_NAME = ${JSON.stringify(packageName)}; ` +
+				"the client registration id and the plugins.bundle.config key both read it",
+		);
+	}
 	return [
 		"window.__ModuleLoader__.load({",
 		`\tid: ${JSON.stringify(packageName)},`,

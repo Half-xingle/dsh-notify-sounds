@@ -8,20 +8,23 @@ DeepSeek Harness Web GUI 提示音插件：当智能体**需要你选择**（提
 
 - **浏览器半部**（`src/client/index.js` → `lib/client.js`）：Web Audio 合成短音，订阅会话状态，零外部依赖（只依赖平台播种的 React）。
 - **宿主半部**（`src/*.js` → `lib/*.js`）：导出插件 `Config` schema（dsh 据此生成设置页面，浏览器半部经 `ctx.configForms` 编辑同一份值），并驱动**原生桌面弹窗**：右下角无边框圆角 toast，6 秒自动消失，不依赖浏览器通知中心——**浏览器标签页关闭也能弹**。
-- 设置项出现在 **设置 → 插件 → dsh-notify-sounds** 页面（开关、音量、试听、恢复默认）。
+- 设置项出现在 **设置 → 插件 → 已安装 → dsh-notify-sounds → 配置**（开关、音量、试听、恢复默认）。
 
 ### 设置页面挂在哪
 
-浏览器半部把卡片注册进 `plugins.item`（官方 `dsh-client-ui-settings-{shell,agent-loop,subagent,web-search}` 用的同一个席位），并用 `ctx.configForms.whileServed` 跟随宿主是否真的服务 `notify-sounds` 命名空间。
+页面一共声明三个配置席位（`dsh-client-ui-plugin-manager/lib/client.js:30-34`），**按注册者身份分**，注册错席位就会出现在错误的分组里：
 
-`plugins.item` 会向同一个注册项要两种视图，所以卡片按 `view` 分支：
+| 席位 | 给谁 | 键 | 渲染位置 |
+| --- | --- | --- | --- |
+| `plugins.item` | **官方**插件（每个 host 命名空间一个伴生包） | `id` | 「官方」分组的卡片 → 点开的页面正文 |
+| **`plugins.bundle.config`** | **第三方组合包自己的配置** | `key` = **包名** | 「已安装」分组的该 bundle 详情页（描述与插件行之间） |
+| `plugins.row.config` | 某一行自己的配置 | `key` = `<包名>#<行id>` | 该行页面（行上出现「配置」入口） |
 
-| `view` | 渲染位置 | 返回什么 |
-| --- | --- | --- |
-| `summary` | Plugins 页面插件卡片里的一行简介（该行 CSS 自带单行裁剪） | **只返回一句话**，不渲染表单 |
-| `page` | 从该卡片打开的插件页正文 | 完整设置卡片 |
+本插件是第三方组合包，因此用 **`plugins.bundle.config`，key 为包名 `dsh-notify-sounds`** —— 与另一个第三方插件 `dsh-skill-hub` 同一个席位。用 `ctx.configForms.whileServed` 跟随宿主是否真的服务 `notify-sounds` 命名空间，没装这个插件的部署里不会留下痕迹。
 
-> 少了 `summary` 分支就会出现「设置项直接平铺在插件列表里」的现象——列表里那张卡片会把整个表单吐出来。这是官方惯例（`ui-settings-shell` 即 `if (props.view === 'summary') return t('description')`），本插件已对齐。
+组件的 `view` 分支是**防御性**的：这个席位只会用 `view: 'page'`（表单）。但另外两个席位会先用 `view: 'summary'` 要一句话、再把它塞进卡片里单行裁剪的行（CSS 是 `-webkit-line-clamp:1`），所以 `summary` 必须返回文本 —— 否则整个设置面板会平铺进插件列表。官方 `ui-settings-shell` 是同一写法：`if (props.view === 'summary') return t('description')`。
+
+> 曾经用过 `plugins.item`（早期版本还用过 0.1.7 已移除的 `settings.plugin.item`）。前者会让第三方插件混进「官方」分组，已修正。
 
 ## 声音
 
@@ -164,7 +167,7 @@ allowBuilds:
 | 动态包只 `require` 平台种子词（React 等）；不得 import 其他功能插件的运行时值 | ✅ 只 `require("react")`；跨包协作走注入的服务与插槽 |
 | React 属于外壳播种的基线 external，**不写进**动态包的清单依赖 | ✅ React 只在 `devDependencies`，`dsh.client.inject` 只做元数据 |
 | 设置来源 = 插件导出的 `Config` schema；面向用户的字段用 `.volatile()`，经 `ctx.configForms` 编辑 | ✅ 12 个字段（11 个 volatile） |
-| 设置页面注册进 `plugins.item`，并用 `ctx.configForms.whileServed` 跟随宿主命名空间 | ✅ `whileServed([SETTINGS_NAMESPACE], …)` |
+| 设置页面按注册者身份选席位：官方插件用 `plugins.item`，第三方组合包用 `plugins.bundle.config`（key = 包名），并用 `ctx.configForms.whileServed` 跟随宿主命名空间 | ✅ `plugins.bundle.config` + `key: PACKAGE_NAME` + `whileServed([SETTINGS_NAMESPACE], …)` |
 | 插件集变化需要重启 `dsh web` | ✅ 见「安装」末段 |
 | 所有注册都是 effect，随插件卸载清理 | ✅ `ctx.effect` / `ctx.on`；插件只用具名导出、不导出 default |
 

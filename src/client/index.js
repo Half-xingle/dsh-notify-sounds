@@ -29,6 +29,12 @@
 	});
 	/** Locale namespace of the settings card copy. */
 	const CARD_NS = "notify-sounds.card";
+	/**
+	 * This package's name. It is the client module registration id, and the
+	 * `plugins.bundle.config` key that puts the settings form on this bundle's
+	 * own page (that slot is keyed by package name).
+	 */
+	const PACKAGE_NAME = "dsh-notify-sounds";
 	/** Loader entry id owned by this plugin — the settings namespace the Host serves. */
 	const SETTINGS_NAMESPACE = "notify-sounds";
 	/** localStorage key of the fallback store (used when no Host form is served). */
@@ -706,21 +712,19 @@
 		}
 	};
 	/**
-	 * Render the notify-sounds settings surface.
+	 * Render the notify-sounds settings form.
 	 *
-	 * The `plugins.item` slot asks one registrant for two different things, so the
-	 * component branches on `view`:
-	 *  - `summary` is the one-line description inside the plugin's card on the
-	 *    Plugins page. The card renders it as plain text in a single-clamped row,
-	 *    so returning the form here would spill the whole settings panel into the
-	 *    list;
-	 *  - `page` is the body of the plugin's own page, opened from that card.
+	 * This is the `plugins.bundle.config` registrant, which the Plugins page
+	 * renders as the body of this bundle's own page — always with `view: 'page'`.
+	 * The guard below keeps a `summary` request from ever returning the form: the
+	 * sibling seats that do ask for a one-liner (`plugins.item`, `plugins.row.config`)
+	 * clamp it into a single row of a card, so a form returned there would spill the
+	 * whole settings panel into a list. This registrant should never receive it.
 	 * @param props - `view`, `t`, `useNotify`, `setField`, `resetField`, `resetAll`, `preview`, `requestPermission`, `permission`.
-	 * @returns the one-line description for `summary`, the settings card for `page`.
+	 * @returns the settings form.
 	 */
 	function NotifyCard(props) {
 		const { t } = props;
-		// The card's one-liner owns its own clamping and layout; return text only.
 		if (props.view === "summary") return t("description");
 		const value = props.useNotify((s) => s);
 		const toggle = (key, checked) => props.setField(key, checked === true);
@@ -901,8 +905,8 @@
 		"configForms"
 	];
 	/**
-	 * Plugin body: watch sessions for notification edges and mount the
-	 * settings page into the Plugins surface.
+	 * Plugin body: watch sessions for notification edges and contribute the
+	 * settings form to this bundle's own page.
 	 * @param ctx - client plugin context.
 	 */
 	function apply(ctx) {
@@ -914,17 +918,21 @@
 		const store = createSettingsStore(ctx, SETTINGS_NAMESPACE);
 		ctx.effect(() => () => store.dispose(), "notify-sounds: settings store");
 		const runtime = new NotifyRuntime(ctx, store);
-		// The page rides the official `whileServed` contract: it registers
-		// only while the Host serves this entry's namespace and withdraws
-		// when it stops. `settings.plugin.item` — the keyed slot this plugin
-		// used before dsh 0.1.7 — no longer exists.
+		// This plugin is a third-party BUNDLE, so its configuration belongs on the
+		// bundle's own page, keyed by package name: `plugins.bundle.config` is the
+		// seat for exactly that, and it renders under the Plugins page's installed
+		// group. `plugins.item` is reserved for the official plugins and would list
+		// this one among them; `plugins.row.config` configures one Loader row.
+		//
+		// The registration rides the `whileServed` contract: it exists only while
+		// the Host actually serves this entry's settings namespace, and is
+		// withdrawn when it stops, so a deployment that never composed the plugin
+		// shows no trace of the page.
 		ctx.effect(() => ctx.configForms.whileServed([SETTINGS_NAMESPACE], () => {
 			try {
-				return ctx.slots.inject("plugins.item", () => ctx.slots.register({
-					name: "plugins.item",
-					id: SETTINGS_NAMESPACE,
-					order: 60,
-					label: () => t("title"),
+				return ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register({
+					name: "plugins.bundle.config",
+					key: PACKAGE_NAME,
 					locale: CARD_NS,
 					inject: () => runtime.inject()
 				}, NotifyCard));

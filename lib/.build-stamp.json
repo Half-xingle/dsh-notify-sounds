@@ -1,7 +1,7 @@
 {
 	"packageName": "dsh-notify-sounds",
 	"inputs": {
-		"client/index.js": "d2b06a98bca800d1dd9a4d226c0e89fd8db8ce3d404736f5e017f102dcfd7cd6",
+		"client/index.js": "172aef8789ebc32592c4ae6ec35c0ef7c00a479425226f2dea20a75e3e2162cb",
 		"index.js": "a29ef556b016fd3991d9cb1935ba278c4aaccda139fed81a2d7ac7fbf1119a82",
 		"notifier.js": "8e9f8aa2eedf18c1a602285b8ae3688f5b8ff0471c3193d29394177d457ce0a8",
 		"popup.js": "582be57a51b12943a4b85adb2a3c68cf8e0e21062f3a6a46f383413796994d82"

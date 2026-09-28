@@ -237,14 +237,24 @@ const ctx = {
 mod.apply(ctx);
 assert(locales.has("notify-sounds.card"), "card locale registered");
 assert(eventHandlers.has("connection/reset"), "connection/reset handler installed");
-assert(slotInjections.has("plugins.item"), "plugins.item injection registered (the pre-0.1.7 settings.plugin.item slot is gone)");
+// This plugin is a third-party bundle, so its form belongs on the bundle's own
+// page — never on `plugins.item`, which lists the OFFICIAL plugins.
+assert(
+	slotInjections.has("plugins.bundle.config"),
+	"plugins.bundle.config injection registered (not plugins.item, which is the official plugins' seat)"
+);
+assert(!slotInjections.has("plugins.item"), "plugins.item is never claimed: this plugin is not an official one");
 
 // ---- collect the card registration + store handle ----
-const disposePage = slotInjections.get("plugins.item")();
+const disposePage = slotInjections.get("plugins.bundle.config")();
 const registration = registrations[0];
 assert(registration !== void 0, "slots.register captured a registration");
-assert(registration.options.name === "plugins.item", "card registers into the plugins.item list slot");
-assert(registration.options.id === "notify-sounds", "card id is the loader entry id (list slot contract)");
+assert(registration.options.name === "plugins.bundle.config", "form registers into the bundle-config seat");
+assert(
+	registration.options.key === "dsh-notify-sounds",
+	"bundle-config key is the package name (the page dispatches entryKey = pkg.name)"
+);
+assert(registration.options.id === void 0, "bundle config is keyed, not id-addressed: it declares no `id`");
 assert(typeof disposePage === "function", "the page registration returns a disposer for whileServed");
 assert(typeof registration.component === "function", "card component is a function");
 const injected = registration.options.inject();
@@ -255,14 +265,14 @@ const cardProps = {
 	useNotify: (selector) => selector(store.getSnapshot()),
 	...injected
 };
-// The summary view is the one-liner inside the plugin's card on the Plugins
-// page; returning the form there would spill the settings panel into the list.
-const summary = registration.component({ ...cardProps, view: "summary" });
-assert(summary === "description", `summary view returns the one-line description (got ${JSON.stringify(summary)})`);
-// The page view is the body of the plugin's own page, opened from that card.
+// The bundle-config seat renders the page view (the body of the bundle's page).
 const cardEl = registration.component({ ...cardProps, view: "page" });
 assert(cardEl !== null && cardEl !== void 0, "card renders in the page view");
 assert(typeof cardEl.props.children === "object", "card has children rows");
+// Defensive: a `summary` request must never yield the form, because the seats
+// that ask for a one-liner clamp it into a single card row.
+const summary = registration.component({ ...cardProps, view: "summary" });
+assert(summary === "description", `summary request returns the one-liner, never the form (got ${JSON.stringify(summary)})`);
 
 // ---- defaults ----
 assert(store.getSnapshot().enabled === true && store.getSnapshot().volume === 0.5, "defaults applied");
