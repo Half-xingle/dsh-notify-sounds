@@ -6,19 +6,20 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # The build runs first because everything else consumes lib/: `--verify` fails
+  # when the committed artifacts drift from src/, and the browser bundle comes
+  # from lib/client.js.
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      # smoke.mjs is self-contained (stubs the browser environment).
-      # host-smoke.mjs imports the host half against the real @deepseek-ai
-      # packages, so install the declared dependencies first.
       - run: npm install --no-audit --no-fund
-      - run: node test/smoke.mjs
-      - run: node test/host-smoke.mjs
+      # Whole pipeline: stale-artifact verification, then every test file.
+      # smoke.mjs / status-source.mjs / build-smoke.mjs stub the browser
+      # environment; host-smoke.mjs imports the host half against the real
+      # @deepseek-ai/schemastery.
+      - run: npm test
