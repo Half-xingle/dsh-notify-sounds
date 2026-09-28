@@ -255,8 +255,13 @@ const cardProps = {
 	useNotify: (selector) => selector(store.getSnapshot()),
 	...injected
 };
-const cardEl = registration.component(cardProps);
-assert(cardEl !== null && cardEl !== void 0, "card renders");
+// The summary view is the one-liner inside the plugin's card on the Plugins
+// page; returning the form there would spill the settings panel into the list.
+const summary = registration.component({ ...cardProps, view: "summary" });
+assert(summary === "description", `summary view returns the one-line description (got ${JSON.stringify(summary)})`);
+// The page view is the body of the plugin's own page, opened from that card.
+const cardEl = registration.component({ ...cardProps, view: "page" });
+assert(cardEl !== null && cardEl !== void 0, "card renders in the page view");
 assert(typeof cardEl.props.children === "object", "card has children rows");
 
 // ---- defaults ----

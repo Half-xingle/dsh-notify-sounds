@@ -10,6 +10,19 @@ DeepSeek Harness Web GUI 提示音插件：当智能体**需要你选择**（提
 - **宿主半部**（`src/*.js` → `lib/*.js`）：导出插件 `Config` schema（dsh 据此生成设置页面，浏览器半部经 `ctx.configForms` 编辑同一份值），并驱动**原生桌面弹窗**：右下角无边框圆角 toast，6 秒自动消失，不依赖浏览器通知中心——**浏览器标签页关闭也能弹**。
 - 设置项出现在 **设置 → 插件 → dsh-notify-sounds** 页面（开关、音量、试听、恢复默认）。
 
+### 设置页面挂在哪
+
+浏览器半部把卡片注册进 `plugins.item`（官方 `dsh-client-ui-settings-{shell,agent-loop,subagent,web-search}` 用的同一个席位），并用 `ctx.configForms.whileServed` 跟随宿主是否真的服务 `notify-sounds` 命名空间。
+
+`plugins.item` 会向同一个注册项要两种视图，所以卡片按 `view` 分支：
+
+| `view` | 渲染位置 | 返回什么 |
+| --- | --- | --- |
+| `summary` | Plugins 页面插件卡片里的一行简介（该行 CSS 自带单行裁剪） | **只返回一句话**，不渲染表单 |
+| `page` | 从该卡片打开的插件页正文 | 完整设置卡片 |
+
+> 少了 `summary` 分支就会出现「设置项直接平铺在插件列表里」的现象——列表里那张卡片会把整个表单吐出来。这是官方惯例（`ui-settings-shell` 即 `if (props.view === 'summary') return t('description')`），本插件已对齐。
+
 ## 声音
 
 | 场景 | 触发时机 | 声音 |

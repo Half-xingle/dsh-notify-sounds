@@ -706,12 +706,22 @@
 		}
 	};
 	/**
-	 * Render the notify-sounds settings card.
-	 * @param props - `t`, `useNotify`, `setField`, `resetField`, `resetAll`, `preview`, `requestPermission`, `permission`.
-	 * @returns the card.
+	 * Render the notify-sounds settings surface.
+	 *
+	 * The `plugins.item` slot asks one registrant for two different things, so the
+	 * component branches on `view`:
+	 *  - `summary` is the one-line description inside the plugin's card on the
+	 *    Plugins page. The card renders it as plain text in a single-clamped row,
+	 *    so returning the form here would spill the whole settings panel into the
+	 *    list;
+	 *  - `page` is the body of the plugin's own page, opened from that card.
+	 * @param props - `view`, `t`, `useNotify`, `setField`, `resetField`, `resetAll`, `preview`, `requestPermission`, `permission`.
+	 * @returns the one-line description for `summary`, the settings card for `page`.
 	 */
 	function NotifyCard(props) {
 		const { t } = props;
+		// The card's one-liner owns its own clamping and layout; return text only.
+		if (props.view === "summary") return t("description");
 		const value = props.useNotify((s) => s);
 		const toggle = (key, checked) => props.setField(key, checked === true);
 		const percent = Math.round((value.volume ?? DEFAULT_SETTINGS.volume) * 100);
