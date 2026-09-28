@@ -3,7 +3,7 @@
  *
  * Simulates the client-modules environment: a fake `window` with
  * `__ModuleLoader__`, fake `document`, a stub react, a fake settings scope
- * (the official settingsScope contract: layered value/base/user + revision),
+ * (the official configForms contract: layered value/base/user + revision),
  * a fake sessions list observable, and a fake AudioContext that records
  * scheduled tones. Drives `apply(ctx)` and asserts notification edges +
  * settings.
@@ -97,9 +97,9 @@ const fakeDocument = { visibilityState: "visible" };
 globalThis.window = fakeWindow;
 globalThis.document = fakeDocument;
 
-// ---- fake settings scope (official settingsScope layered contract) ----
-const scopeListeners = new Set();
-let scopeState = {
+// ---- fake config form (official configForms entry contract, dsh ≥ 0.1.7) ----
+const formListeners = new Set();
+let formState = {
 	status: "ready",
 	value: null, // filled after the bundle materializes (defaults known)
 	base: null,
@@ -108,45 +108,50 @@ let scopeState = {
 	writable: true,
 	mode: "host"
 };
-const publishScope = () => {
-	for (const listener of [...scopeListeners]) listener();
+const publishForm = () => {
+	for (const listener of [...formListeners]) listener();
 };
-const fakeScope = {
-	getSnapshot: () => scopeState,
+const fakeForm = {
+	getSnapshot: () => formState,
 	subscribe: (listener) => {
-		scopeListeners.add(listener);
+		formListeners.add(listener);
 		return () => {
-			scopeListeners.delete(listener);
+			formListeners.delete(listener);
 		};
 	},
 	set(field, value) {
-		// replace the snapshot object (the real controller immer-updates the store,
+		// replace the snapshot object (the real controller immer-updates its store,
 		// so getSnapshot() returns a NEW reference after every change)
-		scopeState = {
-			...scopeState,
-			user: { ...scopeState.user, [field]: value },
-			value: { ...scopeState.value, [field]: value },
-			revision: scopeState.revision + 1
+		formState = {
+			...formState,
+			user: { ...formState.user, [field]: value },
+			value: { ...formState.value, [field]: value },
+			revision: formState.revision + 1
 		};
-		publishScope();
-		return Promise.resolve();
+		publishForm();
+		return Promise.resolve(true);
 	},
 	unset(field) {
-		const { [field]: _removed, ...rest } = scopeState.user;
-		scopeState = {
-			...scopeState,
+		const { [field]: _removed, ...rest } = formState.user;
+		formState = {
+			...formState,
 			user: rest,
-			value: { ...scopeState.base, ...rest },
-			revision: scopeState.revision + 1
+			value: { ...formState.base, ...rest },
+			revision: formState.revision + 1
 		};
-		publishScope();
-		return Promise.resolve();
+		publishForm();
+		return Promise.resolve(true);
 	}
 };
-const settingsScopeService = {
-	bind: (spec) => {
-		assert(spec.namespace === "notify-sounds", "settings scope binds the notify-sounds namespace");
-		return fakeScope;
+const configFormsService = {
+	get: (entryId) => {
+		assert(entryId === "notify-sounds", "configForms.get binds the notify-sounds entry id");
+		return fakeForm;
+	},
+	whileServed: (namespaces, register) => {
+		assert(namespaces.includes("notify-sounds"), "whileServed follows the notify-sounds namespace");
+		const dispose = register(new Set(namespaces));
+		return () => dispose?.();
 	}
 };
 
@@ -169,10 +174,11 @@ const mod = handoff.factory(fakeRequire);
 assert(typeof mod.apply === "function", "exports.apply is a function");
 assert(Array.isArray(mod.inject), "exports.inject is an array");
 assert(mod.inject.includes("sessions"), "inject lists sessions");
-assert(mod.inject.includes("settingsScope"), "inject lists settingsScope");
-// seed the fake scope document with the plugin's defaults (host schema layer)
-scopeState.value = { ...mod.DEFAULT_SETTINGS };
-scopeState.base = { ...mod.DEFAULT_SETTINGS };
+assert(mod.inject.includes("configForms"), "inject lists configForms");
+assert(!mod.inject.includes("settingsScope"), "inject no longer lists the removed settingsScope service");
+// seed the fake form with the plugin's defaults (host schema layer)
+formState.value = { ...mod.DEFAULT_SETTINGS };
+formState.base = { ...mod.DEFAULT_SETTINGS };
 
 // ---- fake sessions list observable + fake open session (conversation) ----
 const sessionsListeners = new Set();
@@ -212,27 +218,34 @@ const ctx = {
 	effect: (fn) => { const out = fn(); return out ?? (() => {}); },
 	on: (event, handler) => { eventHandlers.set(event, handler); return () => {}; },
 	get: (key) => (key === "sessions" ? sessionsService : void 0),
-	locale: { register: (ns, dict) => locales.set(ns, dict) },
+	locale: {
+		register: (ns, dict) => locales.set(ns, dict),
+		bind: (ns) => (key) => `${ns}:${key}`,
+		resolveText: (text) => text
+	},
 	slots: {
-		inject: (name, fn) => slotInjections.set(name, fn),
+		inject: (name, fn) => {
+			slotInjections.set(name, fn);
+			return () => {};
+		},
 		register: (options, component) => { registrations.push({ options, component }); return () => {}; }
 	},
-	settingsScope: settingsScopeService
+	configForms: configFormsService
 };
 
 // ---- apply ----
 mod.apply(ctx);
 assert(locales.has("notify-sounds.card"), "card locale registered");
 assert(eventHandlers.has("connection/reset"), "connection/reset handler installed");
-assert(slotInjections.has("settings.plugin.item"), "settings.plugin.item injection registered");
+assert(slotInjections.has("plugins.item"), "plugins.item injection registered (the pre-0.1.7 settings.plugin.item slot is gone)");
 
 // ---- collect the card registration + store handle ----
-const gen = slotInjections.get("settings.plugin.item")();
-const first = gen.next();
-assert(first.done === false, "slot injection yields a registration");
+const disposePage = slotInjections.get("plugins.item")();
 const registration = registrations[0];
 assert(registration !== void 0, "slots.register captured a registration");
-assert(registration.options.key === "notify-sounds", "card registered with key = settings namespace (keyed slot contract)");
+assert(registration.options.name === "plugins.item", "card registers into the plugins.item list slot");
+assert(registration.options.id === "notify-sounds", "card id is the loader entry id (list slot contract)");
+assert(typeof disposePage === "function", "the page registration returns a disposer for whileServed");
 assert(typeof registration.component === "function", "card component is a function");
 const injected = registration.options.inject();
 const store = injected.hooks.notify;
@@ -340,14 +353,14 @@ const before = plays();
 injected.preview();
 assert(plays() === before + 3, "preview plays the complete sequence (3-note) 鈥?got " + (plays() - before));
 
-// ---- settings scope: writes land in the document's user layer ----
+// ---- settings form: writes land in the entry's user layer ----
 store.set("volume", 0.8);
 store.set("question", false);
-assert(scopeState.user.volume === 0.8 && scopeState.user.question === false, "card writes land in the settings document user layer");
-assert(store.getSnapshot().volume === 0.8 && store.getSnapshot().question === false, "store reflects the scope document after writes");
-// a fresh adapter over the same scope sees the same document
-const fresh = mod.createSettingsScopeStore(fakeScope);
-assert(fresh.getSnapshot().volume === 0.8 && fresh.getSnapshot().question === false, "fresh store reads the scope document");
+assert(formState.user.volume === 0.8 && formState.user.question === false, "card writes land in the entry's user layer");
+assert(store.getSnapshot().volume === 0.8 && store.getSnapshot().question === false, "store reflects the form document after writes");
+// a fresh adapter over the same form sees the same document
+const fresh = mod.createConfigFormStore(fakeForm);
+assert(fresh.getSnapshot().volume === 0.8 && fresh.getSnapshot().question === false, "fresh store reads the form document");
 fresh.dispose();
 store.set("volume", 0.5);
 store.set("question", true);
@@ -357,7 +370,7 @@ store.set("onlyWhenHidden", true);
 store.set("volume", 0.9);
 injected.resetAll();
 assert(store.getSnapshot().onlyWhenHidden === false && store.getSnapshot().volume === 0.5, "resetAll restores defaults (unsets the user layer)");
-assert(Object.keys(scopeState.user).length === 0, "resetAll empties the settings document user layer");
+assert(Object.keys(formState.user).length === 0, "resetAll empties the entry's user layer");
 
 // ---- audio unlock listeners installed ----
 assert(windowListeners.has("pointerdown") && windowListeners.has("keydown"), "audio unlock listeners installed");

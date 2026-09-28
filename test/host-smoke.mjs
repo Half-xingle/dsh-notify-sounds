@@ -1,7 +1,8 @@
 /**
  * Host-half smoke test: imports lib/index.js for real (through workspace shims
  * that re-export the installed @deepseek-ai packages), then exercises:
- *  - the settings-section registration (installSettingsSection contract),
+ *  - the settings contract: the exported Config schema dsh derives the page
+ *    from, and the fact that apply needs no settings service at all,
  *  - the schema validation,
  *  - the native-popup decision engine (createPopupNotifier): question /
  *    approval / complete / todo events, turn-boundary baseline resets,
@@ -10,7 +11,7 @@
  *
  * Run: node test/host-smoke.mjs  (from the dsh-notify-sounds directory)
  */
-import { apply, SETTINGS_NAMESPACE, SETTINGS_SCHEMA, createPopupNotifier, buildPopupCommand, showPopup, isRootSession } from "../lib/index.js";
+import { apply, Config, readConfigValue, SETTINGS_NAMESPACE, createPopupNotifier, buildPopupCommand, showPopup, isRootSession } from "../lib/index.js";
 
 let failures = 0;
 function assert(condition, message) {
@@ -22,30 +23,14 @@ function assert(condition, message) {
 	}
 }
 
-// ---- settings section registration + listener wiring ----
-const registrations = [];
+// ---- listener wiring: apply needs no settings service at all ----
 const listeners = new Map();
-// dsh ≥ 0.1.2: installSettingsSection was removed; the settings service
-// exposes installSection(owner, ns, schema, entry, hooks) instead.
-const fakeSettings = {
-	installSection(owner, ns, schema, entry, hooks) {
-		registrations.push({ ns, schema, entry });
-		hooks.setSource(() => ({ ...entry }));
-		hooks.onChange();
-		return {
-			get: () => ({ ...entry }),
-			watch: () => () => {}
-		};
-	}
-};
 const fakeCtx = {
-	inject(keys, fn) {
-		if (!Array.isArray(keys) || !keys.includes("settings")) throw new Error("expected settings injection");
-		const sctx = {
-			settings: fakeSettings,
-			effect: (fn) => { const out = fn(); return out ?? (() => {}); }
-		};
-		return { dispose: fn(sctx) ?? (() => {}) };
+	// dsh ≥ 0.1.7 derives the settings page from the exported Config schema, and
+	// settings.installSection is gone, so reaching for a settings service here
+	// would be a bug — `inject` is a hard failure.
+	inject() {
+		throw new Error("apply must not use ctx.inject any more (settings.installSection is gone)");
 	},
 	root: {
 		on: (name, fn) => { listeners.set(`root:${name}`, fn); return () => listeners.delete(`root:${name}`); }
@@ -55,9 +40,6 @@ const fakeCtx = {
 	effect: () => () => {}
 };
 apply(fakeCtx); // listeners wired; integration asserts below only feed subagent events (no real spawn)
-assert(registrations.length === 1, "exactly one settings section registered");
-assert(registrations[0].ns === "notify-sounds", "settings namespace is notify-sounds");
-assert(registrations[0].entry.notifications === true && registrations[0].entry.notifStyle === "native", "composition defaults include notification fields");
 assert(typeof listeners.get("session/event") === "function", "session/event listener wired (shared events pool via ctx.on)");
 assert(typeof listeners.get("agent/status") === "function", "agent/status listener wired");
 
@@ -73,32 +55,50 @@ listeners.get("session/event")({ id: "child-1", header: { delegationDepth: 1 } }
 listeners.get("agent/status")({ agent: { id: "child-agent", session: { id: "child-1", header: { delegationDepth: 1 } } }, status: "idle" });
 assert(true, "subagent session/event and agent/status are ignored (no popup spawned)");
 
-// ---- config.popups=false registers settings but no listeners ----
-const disabledRegistrations = [];
+// ---- config.popups=false wires no popup listeners ----
 const disabledListeners = new Map();
 const disabledCtx = {
-	inject(keys, fn) {
-		const sctx = { settings: { installSection: (owner, ns, schema, entry, hooks) => { disabledRegistrations.push({ ns, schema, entry }); hooks.setSource(() => ({ ...entry })); hooks.onChange(); return { get: () => ({ ...entry }), watch: () => () => {} }; } }, effect: (fn) => { const out = fn(); return out ?? (() => {}); } };
-		return { dispose: fn(sctx) ?? (() => {}) };
+	inject() {
+		throw new Error("apply must not use ctx.inject any more");
 	},
 	on: (name, fn) => { disabledListeners.set(name, fn); return () => disabledListeners.delete(name); },
 	effect: () => () => {}
 };
 apply(disabledCtx, { popups: false });
-assert(disabledRegistrations.length === 1 && disabledListeners.size === 0, "popups:false keeps the settings section but wires no popup listeners");
+assert(disabledListeners.size === 0, "popups:false wires no popup listeners (the settings page stays served by the entry Config)");
 
-// ---- schema ----
-const good = SETTINGS_SCHEMA({ notifications: false, notifTodo: true, notifStyle: "both" });
-assert(good.notifications === false && good.notifStyle === "both", "schema accepts valid values");
-assert(good.notifTodoInterval === 12, "schema defaults notifTodoInterval to 12");
-assert(good.notifications === false && good.notifStyle === "both", "schema accepts valid values");
+// ---- Config schema: the settings page dsh derives for this entry ----
+const resolved = Config({ notifications: false, notifTodo: true, notifStyle: "both" });
+// A volatile field resolves to a cosmokit Volatile BOX, not a plain value —
+// readConfigValue is what the gate uses, and comparing the box itself would
+// silently disable the gate (the trap this plugin was migrated past).
+assert(typeof resolved.notifications === "object" && typeof resolved.notifications.get === "function", "volatile fields resolve to Volatile boxes");
+assert(readConfigValue(resolved.notifications) === false && readConfigValue(resolved.notifStyle) === "both", "schema accepts valid values");
+assert(readConfigValue(resolved.notifTodoInterval) === 12, "schema defaults notifTodoInterval to 12");
+assert(readConfigValue(Config({}).popups) === true, "popups defaults to true (popups on)");
+assert(Config({}).popups === true, "popups is ordinary config (plain boolean, not a box)");
+{
+	// The loader rewrites the box IN PLACE on a live settings edit; a read taken
+	// afterwards must see the new value, which is what makes a toggle live.
+	const writeSymbol = Object.getOwnPropertySymbols(resolved.notifications).find((symbol) => String(symbol).includes("volatile"));
+	assert(typeof writeSymbol === "symbol", "the box carries the volatile write symbol");
+	resolved.notifications[writeSymbol](true);
+	assert(readConfigValue(resolved.notifications) === true, "a live write through the box is visible on the next read");
+}
 let rejected = false;
 try {
-	SETTINGS_SCHEMA({ notifStyle: "weird" });
+	Config({ notifStyle: "weird" });
 } catch {
 	rejected = true;
 }
 assert(rejected, "schema rejects unknown notifStyle");
+// Every user-facing field must be volatile or the settings page renders empty;
+// `popups` is deployment policy and stays ordinary (non-volatile) config.
+const schemaRefs = Object.values(Config.toJSON().refs ?? {});
+const volatileRefs = schemaRefs.filter((ref) => ref?.meta?.volatile === true);
+assert(volatileRefs.length === 11, `eleven user-facing fields are volatile (got ${volatileRefs.length})`);
+assert(volatileRefs.every((ref) => ref.type === "boolean" || ref.type === "number" || ref.type === "union"), "volatile fields are scalar (path-op writable)");
+assert(SETTINGS_NAMESPACE === "notify-sounds", "entry id equals the client's settings namespace");
 
 // ---- popup decision engine ----
 const shown = [];
