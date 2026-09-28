@@ -1,7 +1,7 @@
 {
   "name": "dsh-notify-sounds",
-  "version": "1.2.1",
-  "description": "DeepSeek Harness Web GUI 提示音插件：智能体需要选择（提问/审批）或任务完成时播放短提示音，带开关与音量设置。",
+  "version": "2.0.0",
+  "description": "DeepSeek Harness Web GUI 提示音插件：智能体需要选择（提问/审批）或任务完成时播放短提示音，并在桌面右下角弹出原生通知。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -47,18 +47,27 @@
     "url": "git+https://github.com/Half-xingle/dsh-notify-sounds.git"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "^3.18.3"
   },
-  "peerDependencies": {
+  "devDependencies": {
     "react": "^18.2.0"
   },
   "files": [
     "lib/index.js",
     "lib/client.js",
-    "cordis.patch.yml"
+    "lib/.build-stamp.json",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "test": "node test/smoke.mjs",
-    "prepublishOnly": "node test/smoke.mjs"
+    "build": "node scripts/build.mjs",
+    "verify": "node scripts/build.mjs --verify",
+    "test": "node scripts/build.mjs --verify && node test/smoke.mjs && node test/host-smoke.mjs && node test/build-smoke.mjs",
+    "prepublishOnly": "npm test",
+    "prepare": "node scripts/build.mjs"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
   }
 }
