@@ -3,12 +3,12 @@
 // Two products:
 //  1. Host half: every src/*.js copied to the matching lib/*.js (plain ESM, no
 //     bundling needed -- these are Node modules the Loader imports directly).
-//  2. Browser half: src/client/*.js concatenated in a fixed order and wrapped as
-//     the lazy-CJS factory the Harness client module system requires. Executing
-//     the file only registers `window.__ModuleLoader__.load({ id, factory })`;
-//     every module side effect lives inside the factory closure and runs at
-//     materialization. The registration id MUST equal the package name, and the
-//     factory may only require platform seed words (here: "react").
+//  2. Browser half: src/client/index.js wrapped as the lazy-CJS factory the
+//     Harness client module system requires. Executing the file only registers
+//     `window.__ModuleLoader__.load({ id, factory })`; every module side effect
+//     lives inside the factory closure and runs at materialization. The
+//     registration id MUST equal the package name, and the factory may only
+//     require platform seed words (here: "react").
 //
 // It also writes lib/.build-stamp.json: the sha256 of every src/ input plus the
 // produced file list. `--verify` recomputes and fails on any mismatch, so a
@@ -27,20 +27,10 @@ const packageName = "dsh-notify-sounds";
 const verifyOnly = process.argv.includes("--verify");
 
 /**
- * Browser-half concatenation order. Each file is plain script text (no
- * import/export) sharing one factory closure, so this order fixes which
- * identifiers exist before which file runs; the entry file runs last and owns
- * the `exports` assignments.
+ * Browser-half source path. It is plain script text (no import/export) holding
+ * the whole browser half; `//#region` markers segment it for navigation.
  */
-const CLIENT_ORDER = [
-	"contract.js",
-	"locale.js",
-	"audio.js",
-	"settings.js",
-	"runtime.js",
-	"card.js",
-	"index.js",
-];
+const CLIENT_SOURCE = "index.js";
 
 /** Every file under `dir`, as slash-separated paths relative to `dir`. */
 async function listFiles(dir, base = dir) {
@@ -58,17 +48,13 @@ async function hostInputs() {
 	return (await listFiles(srcDir)).filter((rel) => !rel.includes("/") && rel.endsWith(".js"));
 }
 
-/** Compose the browser bundle from the client sources. */
+/** Compose the browser bundle from the client source. */
 async function composeClientBundle() {
-	const parts = [];
-	for (const name of CLIENT_ORDER) {
-		const text = await readFile(join(clientDir, name), "utf8");
-		if (/^\s*(?:import|export)\s/m.test(text)) {
-			throw new Error(`src/client/${name} must be plain script text; found a top-level import/export`);
-		}
-		parts.push(`// ---- src/client/${name} ----`, text.trimEnd(), "");
+	const text = await readFile(join(clientDir, CLIENT_SOURCE), "utf8");
+	if (/^\s*(?:import|export)\s/m.test(text)) {
+		throw new Error(`src/client/${CLIENT_SOURCE} must be plain script text; found a top-level import/export`);
 	}
-	const body = parts.join("\n").replace(/^/gm, "\t\t");
+	const body = `// ---- src/client/${CLIENT_SOURCE} ----\n${text.trimEnd()}\n`.replace(/^/gm, "\t\t");
 	return [
 		"window.__ModuleLoader__.load({",
 		`\tid: ${JSON.stringify(packageName)},`,
@@ -76,7 +62,20 @@ async function composeClientBundle() {
 		"\t\tvar module = { exports: {} };",
 		"\t\tvar exports = module.exports;",
 		"\t\tObject.defineProperty(exports, Symbol.toStringTag, { value: \"Module\" });",
+		// The browser half requires exactly this one platform seed word, so the
+		// wrapper binds it once, like the official clientBundle preset does.
+		"\t\tlet react = require(\"react\");",
 		body,
+		// The browser half's public surface. The source never touches `exports`
+		// itself; the build owns the wrapper and these assignments.
+		"\t\texports.apply = apply;",
+		"\t\texports.inject = inject;",
+		"\t\texports.NotifyRuntime = NotifyRuntime;",
+		"\t\texports.createSettingsStore = createSettingsStore;",
+		"\t\texports.createConfigFormStore = createConfigFormStore;",
+		"\t\texports.createLocalSettingsStore = createLocalSettingsStore;",
+		"\t\texports.SETTINGS_NAMESPACE = SETTINGS_NAMESPACE;",
+		"\t\texports.DEFAULT_SETTINGS = DEFAULT_SETTINGS;",
 		"\t\treturn module.exports;",
 		"\t}",
 		"});",

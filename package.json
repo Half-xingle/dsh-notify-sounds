@@ -63,7 +63,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "verify": "node scripts/build.mjs --verify",
-    "test": "node scripts/build.mjs --verify && node test/smoke.mjs && node test/host-smoke.mjs && node test/build-smoke.mjs",
+    "test": "node scripts/build.mjs --verify && node test/smoke.mjs && node test/status-source.mjs && node test/host-smoke.mjs && node test/build-smoke.mjs",
     "prepublishOnly": "npm test",
     "prepare": "node scripts/build.mjs"
   },

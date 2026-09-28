@@ -1,13 +1,7 @@
 {
 	"packageName": "dsh-notify-sounds",
 	"inputs": {
-		"client/audio.js": "91c02ec9efd36421a0daa7ab7d645457248f46c8d334aa57ed9235db7dc00e20",
-		"client/card.js": "11fb58a85fdb7e6657483149572aae8d58c5b46034c6d0d7716f00c6b896832d",
-		"client/contract.js": "ab1d37f5d3c21619c6f31fd900d97d93d64181af2a83b3a00a1b98fc7afe353f",
-		"client/index.js": "46bfb41fcbfd17d1c8636b5b1e4177720f27acb7d6a56484a32fa8c9f06517ca",
-		"client/locale.js": "ab950cbc063382348215d8cb42776ce6170f4db8305e55d163999ab112418d9b",
-		"client/runtime.js": "376f68ea1dcf2cc9d9a8b597ebaa37a7fe2e01b4bb081c4387237102a1a2f2b2",
-		"client/settings.js": "108245b9e2c62ff28959fd70fe254e9eac5b103582a41d29857af260a7cadb56",
+		"client/index.js": "f5e3434c6f496105bfc4ff803dd85b9bb66e1479a084c9ffdcad82781e867f8a",
 		"index.js": "a29ef556b016fd3991d9cb1935ba278c4aaccda139fed81a2d7ac7fbf1119a82",
 		"notifier.js": "8e9f8aa2eedf18c1a602285b8ae3688f5b8ff0471c3193d29394177d457ce0a8",
 		"popup.js": "582be57a51b12943a4b85adb2a3c68cf8e0e21062f3a6a46f383413796994d82"
