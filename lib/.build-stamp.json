@@ -8,9 +8,9 @@
 		"client/locale.js": "ab950cbc063382348215d8cb42776ce6170f4db8305e55d163999ab112418d9b",
 		"client/runtime.js": "376f68ea1dcf2cc9d9a8b597ebaa37a7fe2e01b4bb081c4387237102a1a2f2b2",
 		"client/settings.js": "108245b9e2c62ff28959fd70fe254e9eac5b103582a41d29857af260a7cadb56",
-		"index.js": "359951407fc020f1550b3ce993238a9d49658d70e15a72f90b19d5bcb9ba56ba",
-		"notifier.js": "ea7639c057b65e431e5975bb51268bd1bf47720270b84a8a0e8a219aa4c48fe5",
-		"popup.js": "317211ba0f9c0c3e2ffed124902094a8207188ebb4b43145b8977ee9aae4b06d"
+		"index.js": "a29ef556b016fd3991d9cb1935ba278c4aaccda139fed81a2d7ac7fbf1119a82",
+		"notifier.js": "8e9f8aa2eedf18c1a602285b8ae3688f5b8ff0471c3193d29394177d457ce0a8",
+		"popup.js": "582be57a51b12943a4b85adb2a3c68cf8e0e21062f3a6a46f383413796994d82"
 	},
 	"outputs": [
 		"client.js",

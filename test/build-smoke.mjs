@@ -63,7 +63,8 @@ assert.deepEqual(
 const host = await import(pathToFileURL(join(root, "lib", "index.js")).href);
 assert.equal(Object.hasOwn(host, "default"), false, "host half must not export default");
 assert.equal(typeof host.apply, "function", "host half must export apply");
-assert.equal(typeof host.Config, "object", "host half must export the Config schema");
+assert.equal(typeof host.Config, "function", "host half must export the callable schemastery Config");
+assert.ok(host.Config({}).enabled !== undefined, "the Config schema must resolve");
 assert.equal(host.SETTINGS_NAMESPACE, "notify-sounds", "settings namespace must stay notify-sounds");
 
 console.log(
