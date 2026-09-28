@@ -204,13 +204,80 @@ backup-ref/           改造前的原始文件与一次性迁移脚本（不参�
 
 ## 发布到 npm
 
+### 发布前
+
 ```powershell
-npm version patch      # 或 minor / major
-npm publish --otp=123456
+npm test                 # build --verify + 全部测试
+npm pack --dry-run       # 预检：必须看到 lib/ 下的全部文件（含 notifier.js / popup.js）
+```
+
+`npm pack --dry-run` 不是可选项。宿主半部拆成 `index/notifier/popup` 三个文件后，`files` 里逐条列文件就会漏掉 `lib/notifier.js`，而 `lib/index.js` 要 import 它——**从 npm 装下来会直接加载失败**，只有这条预检能在发布前照出来。
+
+### 发布
+
+```powershell
+npm version minor        # 或 patch / major：改 package.json 并打 tag
+npm login                # 首次，或凭据失效时（npm whoami 报 401）
+npm publish
 git push && git push --tags
 ```
 
-`prepare` 会在安装与发布前构建 `lib/`；`files` 只打包 `lib/`、`cordis.patch.yml`、README 与 LICENSE。
+### 认证：现在是浏览器授权
+
+发布时 npm 会要求认证，正常流程是**浏览器授权**——终端打印
+
+```
+Authenticate your account at: https://www.npmjs.com/auth/cli/<id>
+```
+
+按提示在浏览器里确认即可（这就是你之前问的"6 位验证码"的替代路径；那串 TOTP 只在用验证器 App 的账号上出现）。随后是：
+
+```
+npm notice Your package is being processed and may take a few minutes to become available.
++ dsh-notify-sounds@2.0.0
+```
+
+**`+ 包@版本` 是提交成功，不是失败**，包在服务端还要传播几分钟。**判断是否真的发布要看 registry，不要看终端**：
+
+```powershell
+npm view dsh-notify-sounds version      # 新版本号
+npm view dsh-notify-sounds dist-tags    # latest 应指向新版本
+```
+
+> **别急着重复发布。** npm 11.x 的发布已经是「提交 → 服务端处理」两步，期间该版本被**暂存**占住；同名再发会被拒绝：
+> `E409 ... Cannot publish over previously staged version "x.y.z"`
+> 这条的含义是"上一次还在处理中"，不是"可以再发一次"。等几分钟重查 registry 即可。
+
+> **registry 有传播延迟。** 刚发完立刻查可能仍看到旧版本（`time.modified` 甚至是上次发布的时间），这不代表失败。
+
+### npm 12 的 `stage` 子命令
+
+npm 12 提供正式命令来查看/提交/撤销暂存中的发布：
+
+```powershell
+npm install -g npm@12
+npm stage list dsh-notify-sounds      # 查看暂存区
+npm stage approve dsh-notify-sounds   # 提交
+npm stage reject dsh-notify-sounds    # 撤销
+```
+
+npm 11 没有这个子命令（`Unknown command: "stage"`），只能用浏览器授权走完，或升级到 12 再管理。
+
+### ⚠️ 不要用 bypass-2FA 的长期 token 做自动发布
+
+npm 正在收紧绕过 2FA 的令牌。官网横幅原文：
+
+> npm tokens that bypass 2FA are being restricted — account changes (Aug 2026) and **direct publishing (Jan 2027)**.
+
+含义：
+
+- 以前那种「建一个勾了 *Bypass 2FA* 的 Granular Access Token、塞进 `NPM_TOKEN` 让 CI 自动发」的做法**正在被限制**；
+- 本仓库的 CI **只跑测试、不发版**，正是为了避开这条；
+- 若以后确实要做自动发版，请按 npm 当时的机制设计（很可能是暂存 + 审批，或受限的发布凭据），别照搬旧套路——旧的到 2027-01 会失效。
+
+### `prepare` 与 `files`
+
+`prepare` 会在安装与发布前构建 `lib/`。`files` 发布整个 `lib/` 目录，加 `cordis.patch.yml`、README、LICENSE，共 9 个文件。
 
 ## License
 
