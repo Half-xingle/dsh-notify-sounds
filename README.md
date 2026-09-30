@@ -4,11 +4,27 @@
 [![License](https://img.shields.io/npm/l/dsh-notify-sounds.svg)](LICENSE)
 [![CI](https://github.com/Half-xingle/dsh-notify-sounds/actions/workflows/ci.yml/badge.svg)](https://github.com/Half-xingle/dsh-notify-sounds/actions)
 
-DeepSeek Harness Web GUI 提示音插件：当智能体**需要你选择**（提问 / 计划审阅 / 权限审批）或**任务完成**（会话从运行变为空闲）时，播放一段短提示音，并在屏幕右下角弹出原生通知。适合你把 DSH 页面切到后台、在别的网页干活时的场景。
+DeepSeek Harness 提示音插件：当智能体**需要你选择**（提问 / 计划审阅 / 权限审批）或**任务完成**（会话从运行变为空闲）时，播放一段短提示音，并在屏幕右下角弹出原生通知。适合你把界面切到后台、去干别的事的场景。
+
+**网页端与桌面端通用。** 两端都是 dsh profile，跑同一套插件协议（`dsh.bundle` 参与组合 + `dsh.client` 送浏览器），所以**同一个包直接装在任意一端的 profile 里即可，无需分版本或条件分支**：
+
+```powershell
+dsh plugin --profile web     add dsh-notify-sounds   # 网页端（dsh web）
+dsh plugin --profile desktop add dsh-notify-sounds   # 桌面端（DeepSeek Harness 应用）
+```
+
+| 端 | 实测版本 |
+| --- | --- |
+| 网页端（`dsh web` + web profile） | dsh `0.1.7-rc.2` ✅ |
+| 桌面端（DeepSeek Harness 应用 + desktop profile） | dsh `0.2.0-rc.2` ✅ |
+
+> **支持范围：`dsh ≥ 0.1.7`。** 设置页面依赖 0.1.7 引入的 `plugins.bundle.config` 席位与 `ctx.configForms`；更早的版本用的是另一套设置机制。用 `dsh --version` 或应用内「设置 → 关于」确认版本。本插件刻意**不声明 `@deepseek-ai/dsh-*` 的 peer 依赖**（那些包随预发布线快速变动，声明反而会让你装包时被版本检查卡住），所以下限是文档约定而非强制。
 
 - **浏览器半部**（`src/client/index.js` → `lib/client.js`）：Web Audio 合成短音，订阅会话状态，零外部依赖（只依赖平台播种的 React）。
-- **宿主半部**（`src/*.js` → `lib/*.js`）：导出插件 `Config` schema（dsh 据此生成设置页面，浏览器半部经 `ctx.configForms` 编辑同一份值），并驱动**原生桌面弹窗**：右下角无边框圆角 toast，6 秒自动消失，不依赖浏览器通知中心——**浏览器标签页关闭也能弹**。
+- **宿主半部**（`src/*.js` → `lib/*.js`）：导出插件 `Config` schema（dsh 据此生成设置页面，浏览器半部经 `ctx.configForms` 编辑同一份值），并驱动**原生桌面弹窗**：右下角无边框圆角 toast，6 秒自动消失，不依赖浏览器通知中心——**标签页关闭也能弹**。
 - 设置项出现在 **设置 → 插件 → 已安装 → dsh-notify-sounds → 配置**（开关、音量、试听、恢复默认）。
+
+> **设置是「每 profile 一份」**：官方 `dsh-config-editor` 的约定是编辑写入**当前 profile 的 patch**（`$DSH_HOME/profiles/<名>/cordis.patch.yml`）。所以同时装了网页端和桌面端时，两端要在**各自那边各设一次**，不会互相同步。
 
 ### 设置页面挂在哪
 
@@ -40,8 +56,11 @@ DeepSeek Harness Web GUI 提示音插件：当智能体**需要你选择**（提
 
 ### 前置
 
-- Windows + DSH web profile（`dsh web` 已运行过，`$DSH_HOME/profiles/web` 存在）
-- 浏览器打开 GUI 后**点击/按键一次**解锁自动播放策略（一次性，之后后台标签页也能响）
+- **Windows**（原生弹窗依赖 PowerShell + WinForms；声音在两端都由浏览器 Web Audio 播放）
+- 一个已初始化过的 dsh profile：网页端跑过 `dsh web`（`$DSH_HOME/profiles/web`），或桌面端应用已启动过（`$DSH_HOME/profiles/desktop`）
+- 网页端首次需要**在页面上点击或按键一次**解锁自动播放策略（一次性，之后后台标签页也能响）
+
+下面的命令用 `--profile web` 举例；**桌面端把 `web` 换成 `desktop` 即可**（桌面端的 CLI 聚合在应用里，也可在 DSH 内用 `plugin_manager` 的 `install_bundle`）。
 
 ### 方式一：本地目录（开发/自用，推荐）
 
@@ -69,8 +88,8 @@ dsh --profile web --dump-config   # 应出现 "# == dsh-notify-sounds" 层
 ### 方式二：npm / tarball（用户侧无需构建授权）
 
 ```powershell
-dsh plugin --profile web add dsh-notify-sounds          # 预构建产物，来自 npm
-dsh plugin --profile web add .\dsh-notify-sounds-2.0.0.tgz   # 或 pnpm pack 出的 tarball
+dsh plugin --profile web add dsh-notify-sounds                  # 预构建产物，来自 npm
+dsh plugin --profile web add .\dsh-notify-sounds-2.0.1.tgz      # 或 pnpm pack 出的 tarball
 ```
 
 ### 方式三：git 安装（需要你为构建脚本授权）
@@ -88,7 +107,7 @@ allowBuilds:
 
 > 请把这项授权视为**允许该包的代码在你机器上以宿主权限执行**（不在 agent 的沙箱内）。只对源码可信的包授权，并锁定 commit（`#<sha>`），避免后续推送改变实际运行的内容。不想授权就改用方式一或方式二。
 
-> 插件集变化（新增/移除包）需要**重启 `dsh web`** 才生效（`client-modules` 对包身份有缓存）。
+> 插件集变化（新增/移除包）需要**重启宿主**才生效（`client-modules` 对包身份有缓存）。
 
 ## 设置项
 
@@ -147,16 +166,22 @@ allowBuilds:
 
 ## 限制
 
-- 浏览器自动播放策略：首次发声前需要页面上有过一次用户手势（点击/按键）。
-- 标签页被**关闭**时听不到声音（浏览器侧插件的固有限制）；原生弹窗不受影响，照常弹出。
-- 多标签页各自发声（每页一个运行时实例），设置经同一个命名空间同步（同源同值）。
+**两端共同：**
+
+- 声音由浏览器 Web Audio 播放：**网页端**首次发声前必须在页面上点击/按键一次（自动播放策略）；**桌面端**（Electron）通常已允许自动播放，若没声音先在窗口里点一下。
+- 界面/窗口被**关闭**时听不到声音（声音跑在前端）；**原生弹窗不受影响** —— 它由宿主进程独立弹出，只要宿主还在跑，通知照样出现。
 - 手动停止任务也会触发「完成」音/弹窗（running → idle 无法区分完成与停止）；如不需要可关闭「任务完成提示」。
-- 原生弹窗仅 Windows（依赖 PowerShell + WinForms），且可能触发安全软件对隐藏 PowerShell 的首次提示（见上）。
+- 原生弹窗**仅 Windows**（依赖 PowerShell + WinForms），且可能触发安全软件对隐藏 PowerShell 的首次提示（见上）。
+- **设置是每 profile 一份**：同时装了网页端和桌面端时，两端要各设一次（见开头说明）。
+
+**网页端特有：**
+
+- 多标签页各自发声（每页一个运行时实例），设置经同一个命名空间同步（同源同值）。
 - 远程（非回环）访问 DSH 时设置可能只读（`status: "unavailable"` 或 `mode: "memory"`），此时卡片回退到浏览器本地 `localStorage`（键 `dsh-notify-sounds.settings.v1`）。
 
 ## 与官方标准的对照
 
-依据官方仓库 `deepseek-ai/deepseek-harness` 的 **master 提交 `21638c5`（2026-09-27）**；本插件运行在 dsh **0.1.7-rc.2**。
+依据官方仓库 `deepseek-ai/deepseek-harness` 的 **master 提交 `21638c5`（2026-09-27）**；本插件已在 dsh **`0.1.7-rc.2`（网页端）与 `0.2.0-rc.2`（桌面端）** 上实测，依赖的 API 在这两条版本线上均未变化。
 
 | 官方要求 | 本插件 |
 | --- | --- |
@@ -168,7 +193,7 @@ allowBuilds:
 | React 属于外壳播种的基线 external，**不写进**动态包的清单依赖 | ✅ React 只在 `devDependencies`，`dsh.client.inject` 只做元数据 |
 | 设置来源 = 插件导出的 `Config` schema；面向用户的字段用 `.volatile()`，经 `ctx.configForms` 编辑 | ✅ 12 个字段（11 个 volatile） |
 | 设置页面按注册者身份选席位：官方插件用 `plugins.item`，第三方组合包用 `plugins.bundle.config`（key = 包名），并用 `ctx.configForms.whileServed` 跟随宿主命名空间 | ✅ `plugins.bundle.config` + `key: PACKAGE_NAME` + `whileServed([SETTINGS_NAMESPACE], …)` |
-| 插件集变化需要重启 `dsh web` | ✅ 见「安装」末段 |
+| 插件集变化需要重启宿主 | ✅ 见「安装」末段 |
 | 所有注册都是 effect，随插件卸载清理 | ✅ `ctx.effect` / `ctx.on`；插件只用具名导出、不导出 default |
 
 ## 开发
